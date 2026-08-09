@@ -1,0 +1,109 @@
+{
+  "theme": "Light mode primary for dashboard with dark mode fallback. Use high contrast, authoritative aesthetic.",
+  "typography": {
+    "font_family": {
+      "headings": "Chivo, sans-serif",
+      "body": "IBM Plex Sans, sans-serif"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl font-black tracking-tight",
+      "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+      "h3": "text-xl sm:text-2xl font-bold",
+      "h4": "text-lg sm:text-xl font-semibold",
+      "body": "text-base leading-relaxed",
+      "labels": "text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground"
+    },
+    "installation": "Update index.css to import fonts from Google Fonts: @import url('https://fonts.googleapis.com/css2?family=Chivo:wght@300;400;700;900&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');"
+  },
+  "colors": {
+    "strategy": "ARCHETYPE 4: SWISS & HIGH-CONTRAST. Authority, Clarity, Truth.",
+    "background": "#FCFCFC",
+    "foreground": "#0A0A0A",
+    "primary": "#0A0A0A",
+    "primary_foreground": "#FFFFFF",
+    "muted": "#F3F4F6",
+    "muted_foreground": "#6B7280",
+    "border": "#E5E7EB",
+    "status": {
+      "approved": "#16A34A",
+      "pending": "#F59E0B",
+      "rejected": "#DC2626",
+      "medical_alert": "#DC2626"
+    },
+    "instructions": "Update index.css HSL variables to match these stark, high-contrast hex values."
+  },
+  "visual_enhancers": {
+    "surface": "GRID BORDERS (The 'Technical' Look). Expose the skeleton.",
+    "borders": "1px solid border-border/60. Use border-collapse for tables and bento grids.",
+    "radius": "Use rounded-none or max rounded-sm (2px) to maintain sharp, institutional authority. No large soft corners.",
+    "shadows": "Remove default soft shadows. Use sharp 1px solid borders or hard offsets if needed. shadow-none on cards.",
+    "textures": "Clean flat surfaces. No gradients."
+  },
+  "components": {
+    "buttons": "Sharp edges (rounded-none). High contrast. Hover state must invert or darken explicitly.",
+    "cards": "Flat background, 1px subtle border, no shadow. Hover: slight border darken, no lift.",
+    "forms": "Use Shadcn Form, Input, Select, Checkbox. Square edges. Label uppercase tracking-widest.",
+    "tables": "Dense rows. Grid lines visible. Use Shadcn Table. Strict alignment.",
+    "badges": "Square borders. Signal colors for statuses (Active, Pending, Alert).",
+    "dialogs": "Solid background, hard border. No glassmorphism.",
+    "icons": "lucide-react. Stroke width 2px or 1.5px consistent."
+  },
+  "layouts": {
+    "dashboard": "Bento Grid Protocol Mode B (High Density). grid-cols-1 md:grid-cols-3 lg:grid-cols-4. gap-4 or gap-6. Every pixel utilized. h-full on children.",
+    "spacing": "Generous external padding, dense internal data. p-6 or p-8 for main containers.",
+    "navigation": "Sidebar or top nav with hard bottom/right border. No transparency. Active state indicated by a hard left border line (3px).",
+    "scan_page": "Mobile-first, high contrast (dark mode enforced for scan page to reduce glare). Massive camera viewfinder, clear large buttons."
+  },
+  "motion": {
+    "interactions": "Minimalist. Hover states change background/border color instantly or 0.15s ease. No bouncy animations.",
+    "loading": "Skeleton loaders with sharp edges. No spinning circles, use linear progress bars.",
+    "accessibility": "Respect prefers-reduced-motion."
+  },
+  "accessibility": {
+    "contrast": "Ensure APCA standards. Normal text min 4.5:1. Never use gray-on-gray.",
+    "data_testid": "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='submit-scan-btn').",
+    "focus": "focus:ring-2 focus:ring-primary focus:ring-offset-2. High visibility."
+  },
+  "media": {
+    "image_urls": {
+      "login_background": "https://images.unsplash.com/photo-1479839672679-a46483c0e7c8",
+      "login_background_description": "White modern cement building under blue sky. Use as full screen background with heavy dark or light overlay.",
+      "inmate_placeholder_female": "https://images.pexels.com/photos/15780884/pexels-photo-15780884.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "inmate_placeholder_male": "https://images.pexels.com/photos/34381971/pexels-photo-34381971.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "qr_scan_abstract": "https://images.pexels.com/photos/278430/pexels-photo-278430.jpeg"
+    },
+    "treatment": "Images must be stark. Avatar placeholders should be monochromatic or desaturated if real images aren't present. For the login background, use a 70% opacity overlay to ensure form contrast."
+  },
+  "instructions_to_main_agent": [
+    "You are building an Indonesian correctional facility (lapas) monitoring dashboard. The language MUST be full Bahasa Indonesia.",
+    "Implement the UI with Shadcn components but override their styles to be flat, sharp (rounded-none), and high-contrast. Remove all default Vercel-like soft shadows and radiuses.",
+    "Apply ARCHETYPE 4 (SWISS & HIGH-CONTRAST) rules. The UI should look like a digitized technical ledger.",
+    "For the scanner page, ensure it is mobile-first, using a dark theme context or high contrast, so operators can use it in varying lighting.",
+    "Use lucide-react for all icons. Do not use emojis.",
+    "Every interactive element MUST have a descriptive data-testid attribute in kebab-case.",
+    "Do not use generic 'transition: all'. Apply explicit transition properties.",
+    "The header and navigation must have solid backgrounds. Do not use transparent backgrounds.",
+    "Do not center-align layouts by default. Left-align data and text. Center only if it improves visual rhythm.",
+    "Use sonner for toast notifications. Include robust error and success feedback for the operator scanning flow.",
+    "Ensure the QR barcode generator uses high contrast logic and the export functionalities are prominent in the UI."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur) where appropriate, BUT NOT for data-dense security dashboards. Stick to solid backgrounds.",
+    "You MUST NOT apply universal transition. Eg: transition: all. This results in breaking transforms. Always add transitions for specific interactive elements.",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file.",
+    "Always use modern button styles (in this context, sharp, technical buttons).",
+    "NEVER use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Use sonner for toasts. Located in /app/frontend/src/components/ui/sonner.js/tsx"
+  ],
+  "general_ui_ux_guidelines": [
+    "Role-based clarity: Ensure Admin, Supervisor, and Operator views are distinctly laid out according to their core tasks.",
+    "Mobile operator view: The scanning flow must be thumb-friendly and highly legible outdoors or in poor lighting.",
+    "Audit log readability: Use tabular data with strict monospace fonts for timestamps and user IDs.",
+    "All interactive and key informational elements MUST include a data-testid attribute."
+  ]
+}
