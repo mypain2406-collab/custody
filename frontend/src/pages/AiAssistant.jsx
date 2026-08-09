@@ -163,15 +163,19 @@ function Chat() {
 
 function Report() {
   const [period, setPeriod] = useState("today");
+  const [officer, setOfficer] = useState(() => localStorage.getItem("officer_name") || "");
+  const [nip, setNip] = useState(() => localStorage.getItem("officer_nip") || "");
   const [output, setOutput] = useState("");
   const [busy, setBusy] = useState(false);
 
   const generate = async () => {
     setOutput("");
     setBusy(true);
+    localStorage.setItem("officer_name", officer);
+    localStorage.setItem("officer_nip", nip);
     try {
-      await streamSSE("/ai/report", { period }, (delta) => setOutput((o) => o + delta));
-      toast.success("Laporan selesai dibuat");
+      await streamSSE("/ai/report", { period, officer_name: officer, officer_nip: nip }, (delta) => setOutput((o) => o + delta));
+      toast.success("Laporan atensi selesai dibuat");
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -183,7 +187,7 @@ function Report() {
     <div className="space-y-4" data-testid="ai-report-panel">
       <div className="flex gap-3 flex-wrap items-center">
         <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="w-56 rounded-none" data-testid="ai-report-period-select">
+          <SelectTrigger className="w-48 rounded-none" data-testid="ai-report-period-select">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="rounded-none">
@@ -191,8 +195,22 @@ function Report() {
             <SelectItem value="week">7 Hari Terakhir</SelectItem>
           </SelectContent>
         </Select>
+        <Input
+          className="rounded-none w-56"
+          placeholder="Nama Petugas"
+          value={officer}
+          onChange={(e) => setOfficer(e.target.value)}
+          data-testid="ai-report-officer-name"
+        />
+        <Input
+          className="rounded-none w-64 font-mono2"
+          placeholder="NIP Petugas"
+          value={nip}
+          onChange={(e) => setNip(e.target.value)}
+          data-testid="ai-report-officer-nip"
+        />
         <Button className="rounded-none font-bold uppercase tracking-widest text-xs" onClick={generate} disabled={busy} data-testid="ai-report-generate-btn">
-          <FileText className="h-4 w-4 mr-2" /> {busy ? "Menyusun Laporan..." : "Buat Laporan"}
+          <FileText className="h-4 w-4 mr-2" /> {busy ? "Menyusun Laporan..." : "Buat Laporan Atensi"}
         </Button>
         {output && (
           <Button
@@ -210,7 +228,7 @@ function Report() {
           <div className="whitespace-pre-wrap text-sm leading-relaxed max-w-3xl">{output}</div>
         ) : (
           <div className="text-sm text-muted-foreground">
-            {busy ? <span className="animate-pulse">Claude sedang menyusun laporan...</span> : "Pilih periode lalu klik Buat Laporan. Claude akan menyusun laporan naratif resmi dari data aktivitas."}
+            {busy ? <span className="animate-pulse">Claude sedang menyusun laporan atensi...</span> : "Pilih periode, isi nama & NIP petugas, lalu klik Buat Laporan Atensi. Claude akan menyusun Laporan Atensi Pimpinan dari data aktivitas nyata di sistem."}
           </div>
         )}
       </div>

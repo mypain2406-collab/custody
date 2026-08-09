@@ -978,6 +978,8 @@ async def ai_session_messages(session_id: str, user: dict = Depends(require_role
 
 class AiReportPayload(BaseModel):
     period: str = "today"
+    officer_name: Optional[str] = None
+    officer_nip: Optional[str] = None
 
 
 @api_router.post("/ai/report")
@@ -999,12 +1001,33 @@ async def ai_report(payload: AiReportPayload, request: Request,
         f"{a.get('scan_location') or '-'} | {a.get('activity_category_label') or '-'} | "
         f"kondisi: {a.get('inmate_condition')} | status: {a.get('status')}"
         for a in items) or "(tidak ada aktivitas pada periode ini)"
+    officer = (payload.officer_name or "").strip() or "____________________"
+    nip = (payload.officer_nip or "").strip() or "____________________"
+    today_id = now.strftime("%d") + " " + [
+        "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+    ][now.month] + f" {now.year}"
     prompt = (
-        f"Buatkan laporan resmi aktivitas warga binaan periode {period_label} untuk {settings['institution_name']}. "
-        f"Struktur laporan: (1) Judul, (2) Ringkasan eksekutif, (3) Rekapitulasi per kategori aktivitas, "
-        f"(4) Rekapitulasi per lokasi, (5) Temuan penting termasuk warga binaan berkondisi sakit/perlu perhatian "
-        f"dan aktivitas yang ditolak/menunggu persetujuan, (6) Rekomendasi tindak lanjut. "
-        f"Tulis naratif formal dalam Bahasa Indonesia.\n\nDATA AKTIVITAS ({len(items)} entri):\n{rows}"
+        f"Buatkan LAPORAN ATENSI PIMPINAN resmi untuk {settings['institution_name']} berdasarkan data aktivitas "
+        f"periode {period_label} berikut. Ikuti PERSIS struktur format di bawah ini (tanpa heading markdown '#', "
+        "judul dan nomor bagian menggunakan huruf kapital):\n\n"
+        "LAPORAN ATENSI PIMPINAN\n\n"
+        f"Kepada:\nYth. Kepala {settings['institution_name']}\n\n"
+        f"Dari:\n{officer}\n\n"
+        "I. PERISTIWA/KEGIATAN\n- (ringkasan singkat jenis kegiatan/insiden dari data aktivitas)\n\n"
+        "II. URAIAN/KEGIATAN\n- (uraian kronologis tiap kegiatan penting: sebutkan hari/tanggal, pukul, nama warga binaan, "
+        "lokasi/blok, petugas/operator yang mencatat, kategori pembinaan, dan kondisi warga binaan; bila ada warga binaan "
+        "berkondisi sakit/perlu perhatian atau aktivitas yang ditolak supervisor, wajib diuraikan; akhiri dengan kalimat "
+        "'Situasi aman dan kondusif.' bila tidak ada insiden keamanan)\n\n"
+        "III. TEMPAT KEGIATAN\n- (daftar lokasi kegiatan dari data, sertakan nama institusi)\n\n"
+        "IV. FOTO/DOKUMENTASI\n- (tulis 'Terlampir' jika ada dokumentasi pada data, jika tidak: 'Tidak ada')\n\n"
+        "V. TINDAK LANJUT\n- Melaporkan kepada pimpinan. (tambahkan rekomendasi tindak lanjut bila ada temuan medis "
+        "atau aktivitas bermasalah)\n\n"
+        "VI. PENUTUP\n- Demikian Laporan Atensi ini dibuat. Selanjutnya mohon arahan dan petunjuk, terima kasih.\n\n"
+        f"(Kota), {today_id}\nAnggota jaga\n\n\nTTD\n\n\n{officer}\nNIP. {nip}\n\n"
+        f"Catatan: nama kota pada baris tanggal diambil dari nama institusi '{settings['institution_name']}' bila memuat "
+        "nama kota; jika tidak ada, tulis garis kosong '________________'.\n\n"
+        f"DATA AKTIVITAS ({len(items)} entri):\n{rows}"
     )
 
     async def gen():
