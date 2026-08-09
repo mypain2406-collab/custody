@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { Plus, Pencil, Trash2, QrCode, TriangleAlert, Search } from "lucide-react";
 
 const STATUS_LABEL = { active: "Aktif", leave: "Izin", released: "Bebas", transferred: "Dipindahkan" };
@@ -21,10 +22,12 @@ const STATUS_STYLE = {
 };
 
 const EMPTY = {
-  full_name: "", registration_number: "", identity_number: "", photo_url: "",
-  status: "active", date_entry: "", estimated_release_date: "", cell_block: "",
-  crime_category: "", medical_alert: "", barcode_data: "",
+  full_name: "", age: "", cell_block: "", religion: "", registration_number: "",
+  crime_category: "", estimated_release_date: "", mp_1_3: "", mp_1_2: "", mp_2_3: "",
+  medical_alert: "", program_notes: "",
 };
+
+const RELIGIONS = ["Islam", "Kristen", "Katolik", "Hindu", "Buddha", "Konghucu", "Lainnya"];
 
 export default function Inmates() {
   const { user } = useAuth();
@@ -46,7 +49,11 @@ export default function Inmates() {
   const save = async () => {
     setBusy(true);
     try {
-      const payload = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, v === "" ? null : v]));
+      const payload = {};
+      Object.keys(EMPTY).forEach((k) => {
+        payload[k] = form[k] === "" || form[k] === undefined || form[k] === null ? null : form[k];
+      });
+      payload.age = form.age ? parseInt(form.age, 10) : null;
       if (editing) {
         await api.put(`/inmates/${editing.id}`, payload);
         toast.success("Data warga binaan diperbarui");
@@ -208,29 +215,40 @@ export default function Inmates() {
             <DialogTitle className="font-heading font-black">{editing ? "Edit Warga Binaan" : "Tambah Warga Binaan"}</DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
-            {F("full_name", "Nama Lengkap", { full: true })}
-            {F("registration_number", "No. Registrasi", { placeholder: "Kosongkan untuk otomatis" })}
-            {F("identity_number", "NIK")}
-            {F("cell_block", "Blok Sel")}
-            {F("crime_category", "Kategori Kasus")}
-            {F("date_entry", "Tanggal Masuk", { type: "date" })}
-            {F("estimated_release_date", "Perkiraan Bebas", { type: "date" })}
+            {F("full_name", "Nama", { full: true })}
+            {F("age", "Umur", { type: "number" })}
+            {F("cell_block", "Blok")}
             <div>
-              <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                <SelectTrigger className="mt-1.5 rounded-none" data-testid="inmate-form-status">
-                  <SelectValue />
+              <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Agama</Label>
+              <Select value={form.religion} onValueChange={(v) => setForm({ ...form, religion: v })}>
+                <SelectTrigger className="mt-1.5 rounded-none" data-testid="inmate-form-religion">
+                  <SelectValue placeholder="Pilih agama" />
                 </SelectTrigger>
                 <SelectContent className="rounded-none">
-                  {Object.entries(STATUS_LABEL).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  {RELIGIONS.map((r) => (
+                    <SelectItem key={r} value={r}>{r}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            {F("photo_url", "URL Foto")}
+            {F("registration_number", "Nomor Register", { placeholder: "Kosongkan untuk otomatis" })}
+            {F("crime_category", "Perkara/Pidana")}
+            {F("estimated_release_date", "Tanggal Bebas", { type: "date" })}
+            <div className="col-span-2 grid grid-cols-3 gap-4">
+              {F("mp_1_3", "1/3 MP", { type: "date" })}
+              {F("mp_1_2", "1/2 MP", { type: "date" })}
+              {F("mp_2_3", "2/3 MP", { type: "date" })}
+            </div>
             {F("medical_alert", "Peringatan Medis", { full: true, placeholder: "Kosongkan jika tidak ada" })}
-            {F("barcode_data", "Data Barcode (isi QR)", { full: true, placeholder: "Default: nomor registrasi" })}
+            <div className="col-span-2">
+              <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Keterangan / Program Pembinaan</Label>
+              <Textarea
+                className="mt-1.5 rounded-none min-h-[80px]"
+                value={form.program_notes || ""}
+                onChange={(e) => setForm({ ...form, program_notes: e.target.value })}
+                data-testid="inmate-form-program_notes"
+              />
+            </div>
           </div>
           {editing && (
             <div className="flex items-center gap-3 border border-border p-3">

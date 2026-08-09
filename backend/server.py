@@ -332,6 +332,12 @@ class InmatePayload(BaseModel):
     crime_category: Optional[str] = None
     medical_alert: Optional[str] = None
     barcode_data: Optional[str] = None
+    age: Optional[int] = None
+    religion: Optional[str] = None
+    mp_1_3: Optional[str] = None
+    mp_1_2: Optional[str] = None
+    mp_2_3: Optional[str] = None
+    program_notes: Optional[str] = None
 
 
 @api_router.get("/inmates")
@@ -396,14 +402,14 @@ async def update_inmate(inmate_id: str, payload: InmatePayload, request: Request
     existing = await db.inmates.find_one({"id": inmate_id})
     if not existing:
         raise HTTPException(status_code=404, detail="Warga binaan tidak ditemukan")
-    update = payload.model_dump()
+    update = payload.model_dump(exclude_unset=True)
     if update.get("registration_number"):
         clash = await db.inmates.find_one({
             "registration_number": update["registration_number"],
             "id": {"$ne": inmate_id}})
         if clash:
             raise HTTPException(status_code=400, detail="Nomor registrasi sudah digunakan")
-    if not update.get("barcode_data"):
+    if "barcode_data" in update and not update["barcode_data"]:
         update["barcode_data"] = update.get("registration_number") or existing["registration_number"]
     update["updated_at"] = now_iso()
     await db.inmates.update_one({"id": inmate_id}, {"$set": update})

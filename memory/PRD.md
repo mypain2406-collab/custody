@@ -34,6 +34,9 @@ Sistem pencatatan aktivitas warga binaan lapas berbasis pemindaian barcode: tabe
   - Laporan Otomatis: laporan naratif resmi periode hari ini / 7 hari, streaming, tombol salin
 - Testing: 11/11 pytest AI + e2e lolos (role gate operator 403, regresi approvals & Excel OK)
 
+## Update 9 Agu 2026 (iterasi 3)
+- Form Tambah/Edit Warga Binaan disederhanakan: Nama, Umur, Blok, Agama, Nomor Register, Perkara/Pidana, Tanggal Bebas, 1/3MP, 1/2MP, 2/3MP, Peringatan Medis, Keterangan/Program Pembinaan (field baru: age, religion, mp_1_3, mp_1_2, mp_2_3, program_notes; update parsial exclude_unset agar barcode_data tidak terhapus)
+
 ## Backlog
 - P0: (kosong)
 - P1: Upload foto warga binaan & foto bukti aktivitas (object storage); cetak kartu barcode massal (PDF); cache 30-60s untuk build_ai_context bila chat dipakai intensif
