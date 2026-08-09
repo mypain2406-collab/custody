@@ -162,7 +162,12 @@ function Chat() {
 }
 
 function Report() {
+  const { data: locations } = useSWR("/locations", fetcher);
+  const { data: settings } = useSWR("/settings", fetcher);
   const [period, setPeriod] = useState("today");
+  const [locationId, setLocationId] = useState("all");
+  const [category, setCategory] = useState("all");
+  const [recipient, setRecipient] = useState(() => localStorage.getItem("report_recipient") || "");
   const [officer, setOfficer] = useState(() => localStorage.getItem("officer_name") || "");
   const [nip, setNip] = useState(() => localStorage.getItem("officer_nip") || "");
   const [output, setOutput] = useState("");
@@ -173,8 +178,16 @@ function Report() {
     setBusy(true);
     localStorage.setItem("officer_name", officer);
     localStorage.setItem("officer_nip", nip);
+    localStorage.setItem("report_recipient", recipient);
     try {
-      await streamSSE("/ai/report", { period, officer_name: officer, officer_nip: nip }, (delta) => setOutput((o) => o + delta));
+      await streamSSE("/ai/report", {
+        period,
+        officer_name: officer,
+        officer_nip: nip,
+        recipient,
+        location_id: locationId !== "all" ? locationId : undefined,
+        category: category !== "all" ? category : undefined,
+      }, (delta) => setOutput((o) => o + delta));
       toast.success("Laporan atensi selesai dibuat");
     } catch (e) {
       toast.error(e.message);
@@ -185,30 +198,67 @@ function Report() {
 
   return (
     <div className="space-y-4" data-testid="ai-report-panel">
+      <div className="border border-border bg-card p-4 space-y-3">
+        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Cakupan Laporan</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Select value={period} onValueChange={setPeriod}>
+            <SelectTrigger className="rounded-none" data-testid="ai-report-period-select">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-none">
+              <SelectItem value="today">Hari Ini</SelectItem>
+              <SelectItem value="week">7 Hari Terakhir</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={locationId} onValueChange={setLocationId}>
+            <SelectTrigger className="rounded-none" data-testid="ai-report-location-select">
+              <SelectValue placeholder="Lokasi" />
+            </SelectTrigger>
+            <SelectContent className="rounded-none">
+              <SelectItem value="all">Semua Lokasi (Menyeluruh)</SelectItem>
+              {(locations || []).map((l) => (
+                <SelectItem key={l.id} value={l.id}>{l.location_name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={category} onValueChange={setCategory}>
+            <SelectTrigger className="rounded-none" data-testid="ai-report-category-select">
+              <SelectValue placeholder="Kategori" />
+            </SelectTrigger>
+            <SelectContent className="rounded-none">
+              <SelectItem value="all">Semua Kategori (Menyeluruh)</SelectItem>
+              {(settings?.activity_categories || []).map((c) => (
+                <SelectItem key={c.key} value={c.key}>{c.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground pt-2">Tujuan & Penandatangan</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Input
+            className="rounded-none"
+            placeholder="Kepada Yth. (mis. Kepala Lapas Kelas IIA Palangka Raya)"
+            value={recipient}
+            onChange={(e) => setRecipient(e.target.value)}
+            data-testid="ai-report-recipient"
+          />
+          <Input
+            className="rounded-none"
+            placeholder="Nama Petugas"
+            value={officer}
+            onChange={(e) => setOfficer(e.target.value)}
+            data-testid="ai-report-officer-name"
+          />
+          <Input
+            className="rounded-none font-mono2"
+            placeholder="NIP Petugas"
+            value={nip}
+            onChange={(e) => setNip(e.target.value)}
+            data-testid="ai-report-officer-nip"
+          />
+        </div>
+      </div>
       <div className="flex gap-3 flex-wrap items-center">
-        <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="w-48 rounded-none" data-testid="ai-report-period-select">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="rounded-none">
-            <SelectItem value="today">Hari Ini</SelectItem>
-            <SelectItem value="week">7 Hari Terakhir</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
-          className="rounded-none w-56"
-          placeholder="Nama Petugas"
-          value={officer}
-          onChange={(e) => setOfficer(e.target.value)}
-          data-testid="ai-report-officer-name"
-        />
-        <Input
-          className="rounded-none w-64 font-mono2"
-          placeholder="NIP Petugas"
-          value={nip}
-          onChange={(e) => setNip(e.target.value)}
-          data-testid="ai-report-officer-nip"
-        />
         <Button className="rounded-none font-bold uppercase tracking-widest text-xs" onClick={generate} disabled={busy} data-testid="ai-report-generate-btn">
           <FileText className="h-4 w-4 mr-2" /> {busy ? "Menyusun Laporan..." : "Buat Laporan Atensi"}
         </Button>
@@ -228,7 +278,7 @@ function Report() {
           <div className="whitespace-pre-wrap text-sm leading-relaxed max-w-3xl">{output}</div>
         ) : (
           <div className="text-sm text-muted-foreground">
-            {busy ? <span className="animate-pulse">Claude sedang menyusun laporan atensi...</span> : "Pilih periode, isi nama & NIP petugas, lalu klik Buat Laporan Atensi. Claude akan menyusun Laporan Atensi Pimpinan dari data aktivitas nyata di sistem."}
+            {busy ? <span className="animate-pulse">Claude sedang menyusun laporan atensi...</span> : "Pilih periode, lokasi/kategori (atau menyeluruh), isi tujuan laporan serta nama & NIP petugas, lalu klik Buat Laporan Atensi."}
           </div>
         )}
       </div>

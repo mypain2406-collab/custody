@@ -980,6 +980,9 @@ class AiReportPayload(BaseModel):
     period: str = "today"
     officer_name: Optional[str] = None
     officer_nip: Optional[str] = None
+    recipient: Optional[str] = None
+    location_id: Optional[str] = None
+    category: Optional[str] = None
 
 
 @api_router.post("/ai/report")
@@ -994,8 +997,24 @@ async def ai_report(payload: AiReportPayload, request: Request,
     else:
         start = now.date().isoformat()
         period_label = "hari ini"
-    items = await db.activities.find({"scan_timestamp": {"$gte": start}}, {"_id": 0}).sort("scan_timestamp", 1).to_list(2000)
     settings = await get_settings_doc()
+    q = {"scan_timestamp": {"$gte": start}}
+    scope_parts = []
+    if payload.location_id:
+        loc = await db.locations.find_one({"id": payload.location_id})
+        if loc:
+            q["location_id"] = payload.location_id
+            scope_parts.append(f"lokasi {loc['location_name']}")
+    if payload.category:
+        cat_label = next((c["label"] for c in settings["activity_categories"]
+                          if c["key"] == payload.category), payload.category)
+        q["activity_category"] = payload.category
+        scope_parts.append(f"kategori {cat_label}")
+    if scope_parts:
+        period_label += " khusus " + " dan ".join(scope_parts)
+    else:
+        period_label += " (seluruh lokasi dan kategori)"
+    items = await db.activities.find(q, {"_id": 0}).sort("scan_timestamp", 1).to_list(2000)
     rows = "\n".join(
         f"- {a.get('scan_timestamp','')[:16]} | {a.get('inmate_name')} ({a.get('inmate_reg')}) | "
         f"{a.get('scan_location') or '-'} | {a.get('activity_category_label') or '-'} | "
@@ -1003,6 +1022,7 @@ async def ai_report(payload: AiReportPayload, request: Request,
         for a in items) or "(tidak ada aktivitas pada periode ini)"
     officer = (payload.officer_name or "").strip() or "____________________"
     nip = (payload.officer_nip or "").strip() or "____________________"
+    recipient = (payload.recipient or "").strip() or f"Kepala {settings['institution_name']}"
     today_id = now.strftime("%d") + " " + [
         "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
         "Juli", "Agustus", "September", "Oktober", "November", "Desember",
@@ -1012,7 +1032,7 @@ async def ai_report(payload: AiReportPayload, request: Request,
         f"periode {period_label} berikut. Ikuti PERSIS struktur format di bawah ini (tanpa heading markdown '#', "
         "judul dan nomor bagian menggunakan huruf kapital):\n\n"
         "LAPORAN ATENSI PIMPINAN\n\n"
-        f"Kepada:\nYth. Kepala {settings['institution_name']}\n\n"
+        f"Kepada:\nYth. {recipient}\n\n"
         f"Dari:\n{officer}\n\n"
         "I. PERISTIWA/KEGIATAN\n- (ringkasan singkat jenis kegiatan/insiden dari data aktivitas)\n\n"
         "II. URAIAN/KEGIATAN\n- (uraian kronologis tiap kegiatan penting: sebutkan hari/tanggal, pukul, nama warga binaan, "
@@ -1044,7 +1064,9 @@ async def ai_report(payload: AiReportPayload, request: Request,
             yield sse({"error": "Layanan AI sedang bermasalah. Coba lagi."})
         yield sse({"done": True})
 
-    await log_audit(user, "activities", "-", "export", {"type": "ai_report", "period": payload.period}, request)
+    await log_audit(user, "activities", "-", "export",
+                    {"type": "ai_report", "period": payload.period,
+                     "location_id": payload.location_id, "category": payload.category}, request)
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 

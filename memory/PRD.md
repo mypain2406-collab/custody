@@ -40,6 +40,9 @@ Sistem pencatatan aktivitas warga binaan lapas berbasis pemindaian barcode: tabe
 ## Update 9 Agu 2026 (iterasi 4)
 - Laporan Otomatis kini berformat LAPORAN ATENSI PIMPINAN (Kepada Yth Kepala Lapas, Dari petugas, I. Peristiwa, II. Uraian kronologis, III. Tempat, IV. Dokumentasi, V. Tindak Lanjut, VI. Penutup, TTD + Nama & NIP); tombol diganti "Buat Laporan Atensi"; input Nama & NIP petugas (tersimpan di localStorage)
 
+## Update 9 Agu 2026 (iterasi 5)
+- Laporan Atensi: input tujuan laporan (Kepada Yth., tersimpan di localStorage), filter cakupan per lokasi dan/atau kategori dengan opsi "Semua (Menyeluruh)"; terverifikasi tidak ada kebocoran data lintas lokasi
+
 ## Backlog
 - P0: (kosong)
 - P1: Upload foto warga binaan & foto bukti aktivitas (object storage); cetak kartu barcode massal (PDF); cache 30-60s untuk build_ai_context bila chat dipakai intensif
