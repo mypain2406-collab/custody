@@ -44,7 +44,7 @@ export default function Login() {
             <span className="text-xs font-bold uppercase tracking-[0.3em]">Lembaga Pemasyarakatan</span>
           </div>
           <h1 className="text-4xl lg:text-5xl font-black tracking-tight leading-tight">
-            SIMAPAN
+            KAWAN PAS
           </h1>
           <p className="mt-3 text-sm text-white/70 max-w-md leading-relaxed">
             Sistem Monitoring Aktivitas Warga Binaan berbasis pemindaian barcode di titik lokasi pembinaan dan keamanan.

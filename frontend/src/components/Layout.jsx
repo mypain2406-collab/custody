@@ -4,12 +4,13 @@ import { fetcher } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, Users2, ScanLine, ClipboardList, CheckSquare,
-  MapPin, QrCode, UserCog, ScrollText, Settings as SettingsIcon, LogOut,
+  MapPin, QrCode, UserCog, ScrollText, Settings as SettingsIcon, LogOut, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const MENU = [
   { to: "/", label: "Dasbor", icon: LayoutDashboard, roles: ["admin", "supervisor", "read_only"] },
+  { to: "/ai", label: "Asisten AI", icon: Sparkles, roles: ["admin", "supervisor"] },
   { to: "/scan", label: "Pemindaian", icon: ScanLine, roles: ["admin", "supervisor", "operator"] },
   { to: "/activities", label: "Aktivitas", icon: ClipboardList, roles: ["admin", "supervisor", "operator", "read_only"] },
   { to: "/approvals", label: "Persetujuan", icon: CheckSquare, roles: ["admin", "supervisor"] },
@@ -35,7 +36,7 @@ export default function Layout() {
       <aside className="w-60 shrink-0 border-r border-border bg-card flex flex-col fixed inset-y-0 z-30 hidden md:flex">
         <div className="p-5 border-b border-border">
           <div className="font-heading font-black text-xl tracking-tight" data-testid="app-title">
-            {settings?.app_title || "SIMAPAN"}
+            {settings?.app_title || "KAWAN PAS"}
           </div>
           <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground mt-1">
             {settings?.institution_name || "Lembaga Pemasyarakatan"}
@@ -78,7 +79,7 @@ export default function Layout() {
 
       <div className="flex-1 md:ml-60 flex flex-col min-h-screen">
         <header className="md:hidden sticky top-0 z-20 bg-card border-b border-border px-4 py-3 flex items-center justify-between">
-          <div className="font-heading font-black text-lg">{settings?.app_title || "SIMAPAN"}</div>
+          <div className="font-heading font-black text-lg">{settings?.app_title || "KAWAN PAS"}</div>
           <div className="flex gap-1 overflow-x-auto">
             {items.slice(0, 5).map((m) => (
               <Button key={m.to} variant="ghost" size="sm" className="rounded-none" onClick={() => navigate(m.to)} data-testid={`nav-mobile-${m.to.slice(1) || "dashboard"}`}>

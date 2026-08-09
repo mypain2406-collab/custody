@@ -1,0 +1,28 @@
+{
+  "summary": "Iteration 2 — verified KAWAN PAS rename + Claude AI integration. Backend: 11/11 pytest passing (test_ai.py) covering role-gated /api/ai/chat SSE, /api/ai/sessions list/messages, /api/ai/report SSE, empty-message 400, unauth 401, operator 403, plus regression on approvals + Excel export. Frontend Playwright: login page shows 'KAWAN PAS' (no 'SIMAPAN'), sidebar shows 'KAWAN PAS' after admin login. /ai page reachable — Chat streamed real answer in ~2s ('Terdapat 10 pemindaian ... 9 Agustus 2026'), session appeared in list, 'Chat Baru' clears, clicking prior session reloads persisted messages (2 msgs) from Mongo. Report tab: 'Hari Ini' → generated 7241-char formal narrative in ~49s with sections (Judul, Ringkasan, Rekap kategori/lokasi, Temuan, Rekomendasi); Salin button visible & clickable. Operator login redirected to /scan; direct navigation to /ai as operator redirected back to /scan. No AI hallucination observed — figures match seed data.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_ai.py",
+    "/app/test_reports/pytest/ai_results.xml",
+    "/app/backend/tests/test_simapan.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py now 1121 lines — still monolithic; splitting into routers (auth, inmates, activities, ai, ...) remains recommended.",
+    "AI streaming endpoints do NOT persist the assistant answer or log audit when the client aborts mid-stream (generator body doesn't run to completion). Acceptable but worth documenting.",
+    "build_ai_context() queries 8 collections on every /ai/chat request (no caching). For heavy chat use, consider a 30-60s TTL cache to reduce Mongo load.",
+    "/api/ai/chat stores user message BEFORE the LLM call — if the LLM subsequently 500s, an orphan user turn remains in ai_messages without an assistant reply.",
+    "ai_sessions title uses first user message truncated to 60 chars — fine, but does not update if user renames or edits."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_ai.py (new — 11 tests)"
+  ],
+  "success_rate": {"backend": "100% (11/11 new AI tests)", "frontend": "100% of tested critical flows"},
+  "test_credentials": "admin/Admin@123, supervisor/Supervisor@123, operator1/Operator@123 (verified)",
+  "seed_data_creation": "Used existing seed data (5 inmates, 10 pemindaian hari ini). Chat/report tests create ai_messages docs — small, not cleaned up (session-scoped test data).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "AI streaming endpoints tested via requests.iter_content and Playwright SSE consumption; timeout of 45-75s is generous enough for Claude sonnet 4.6. Auth token key is 'token' (not 'access_token'). Frontend AI page uses data-testid ai-chat-input, ai-chat-send-btn, ai-msg-assistant-<idx>, ai-session-<sid8>, ai-new-chat-btn, ai-tab-report, ai-report-period-select, ai-report-generate-btn, ai-report-output, ai-report-copy-btn. Login inputs use data-testid login-username-input / login-password-input / login-submit-btn.",
+  "rca of the issue": "No bugs found this iteration."
+}

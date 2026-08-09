@@ -1,5 +1,6 @@
 import os
 import io
+import json
 import uuid
 import logging
 from pathlib import Path
@@ -20,12 +21,13 @@ from pydantic import BaseModel
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
+from emergentintegrations.llm.chat import LlmChat, UserMessage, TextDelta, StreamDone
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
-app = FastAPI(title="SIMAPAN API")
+app = FastAPI(title="KAWAN PAS API")
 api_router = APIRouter(prefix="/api")
 
 JWT_SECRET = os.environ["JWT_SECRET"]
@@ -138,7 +140,7 @@ async def log_audit(user: dict, entity_type: str, entity_id: str, action: str,
 
 DEFAULT_SETTINGS = {
     "key": "app_settings",
-    "app_title": "SIMAPAN",
+    "app_title": "KAWAN PAS",
     "app_subtitle": "Sistem Monitoring Aktivitas Warga Binaan",
     "institution_name": "Lembaga Pemasyarakatan",
     "activity_categories": [
@@ -832,7 +834,190 @@ async def dashboard_stats(user: dict = Depends(get_current_user)):
 
 @api_router.get("/")
 async def root():
-    return {"message": "SIMAPAN API aktif"}
+    return {"message": "KAWAN PAS API aktif"}
+
+
+# ---------------- AI Assistant (Claude) ----------------
+
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
+CLAUDE_PROVIDER, CLAUDE_MODEL = "anthropic", "claude-sonnet-4-6"
+
+AI_SYSTEM = (
+    "Kamu adalah asisten AI KAWAN PAS, sistem monitoring aktivitas warga binaan "
+    "di lembaga pemasyarakatan Indonesia. Jawab SELALU dalam Bahasa Indonesia yang formal dan ringkas. "
+    "Bantu admin dan supervisor memahami data aktivitas, warga binaan, lokasi pemindaian, dan persetujuan. "
+    "Jawaban harus berdasarkan data sistem yang diberikan. Jika data tidak tersedia, katakan dengan jujur."
+)
+
+
+async def build_ai_context() -> str:
+    today = datetime.now(timezone.utc).date().isoformat()
+    lines = []
+    lines.append(f"Tanggal hari ini: {today}")
+    for label, count in [
+        ("Total warga binaan", await db.inmates.count_documents({})),
+        ("Warga binaan aktif", await db.inmates.count_documents({"status": "active"})),
+        ("Pemindaian hari ini", await db.activities.count_documents({"scan_timestamp": {"$gte": today}})),
+        ("Total pemindaian", await db.activities.count_documents({})),
+        ("Menunggu persetujuan", await db.activities.count_documents({"status": "submitted"})),
+        ("Jumlah lokasi", await db.locations.count_documents({})),
+        ("Operator aktif", await db.users.count_documents({"role": "operator", "status": "active"})),
+    ]:
+        lines.append(f"- {label}: {count}")
+
+    by_cat = await db.activities.aggregate([
+        {"$match": {"scan_timestamp": {"$gte": today}}},
+        {"$group": {"_id": "$activity_category_label", "count": {"$sum": 1}}},
+    ]).to_list(20)
+    if by_cat:
+        lines.append("Pemindaian hari ini per kategori: " + ", ".join(f"{c['_id'] or 'Lainnya'} ({c['count']})" for c in by_cat))
+    by_loc = await db.activities.aggregate([
+        {"$match": {"scan_timestamp": {"$gte": today}}},
+        {"$group": {"_id": "$scan_location", "count": {"$sum": 1}}},
+    ]).to_list(20)
+    if by_loc:
+        lines.append("Pemindaian hari ini per lokasi: " + ", ".join(f"{l['_id'] or '-'} ({l['count']})" for l in by_loc))
+
+    locs = await db.locations.find({}, {"_id": 0, "location_name": 1, "location_type": 1, "gps_coordinates": 1}).to_list(100)
+    lines.append("Daftar lokasi: " + "; ".join(
+        f"{l['location_name']} [{l.get('location_type')}]" + (f" GPS {l['gps_coordinates']}" if l.get("gps_coordinates") else "")
+        for l in locs))
+
+    recent = await db.activities.find({}, {"_id": 0}).sort("scan_timestamp", -1).to_list(15)
+    lines.append("15 aktivitas terbaru:")
+    for a in recent:
+        lines.append(
+            f"  - {a.get('scan_timestamp','')[:16]} | {a.get('inmate_name')} ({a.get('inmate_reg')}) | "
+            f"{a.get('scan_location') or '-'} | {a.get('activity_category_label') or '-'} | "
+            f"kondisi: {a.get('inmate_condition')} | status: {a.get('status')} | operator: {a.get('operator_name')}")
+
+    alerts = await db.inmates.find({"medical_alert": {"$nin": [None, ""]}, "status": "active"},
+                                   {"_id": 0, "full_name": 1, "registration_number": 1, "medical_alert": 1}).to_list(50)
+    if alerts:
+        lines.append("Peringatan medis aktif: " + "; ".join(
+            f"{a['full_name']} ({a['registration_number']}): {a['medical_alert']}" for a in alerts))
+    return "\n".join(lines)
+
+
+class AiChatPayload(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+
+
+def sse(obj: dict) -> str:
+    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+
+@api_router.post("/ai/chat")
+async def ai_chat(payload: AiChatPayload, request: Request,
+                  user: dict = Depends(require_roles("admin", "supervisor"))):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=503, detail="Layanan AI belum dikonfigurasi")
+    if not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Pesan tidak boleh kosong")
+    sid = payload.session_id or new_id()
+    await db.ai_messages.insert_one({
+        "id": new_id(), "session_id": sid, "user_id": user["id"], "role": "user",
+        "content": payload.message, "timestamp": now_iso(),
+    })
+    context = await build_ai_context()
+    system = f"{AI_SYSTEM}\n\nDATA SISTEM SAAT INI:\n{context}"
+
+    async def gen():
+        full = []
+        try:
+            chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=sid,
+                           system_message=system).with_model(CLAUDE_PROVIDER, CLAUDE_MODEL)
+            async for ev in chat.stream_message(UserMessage(text=payload.message)):
+                if isinstance(ev, TextDelta):
+                    full.append(ev.content)
+                    yield sse({"text": ev.content})
+                elif isinstance(ev, StreamDone):
+                    break
+        except Exception as e:
+            logger.error(f"AI chat error: {e}")
+            yield sse({"error": "Layanan AI sedang bermasalah. Coba lagi."})
+        answer = "".join(full)
+        if answer:
+            await db.ai_messages.insert_one({
+                "id": new_id(), "session_id": sid, "user_id": user["id"], "role": "assistant",
+                "content": answer, "timestamp": now_iso(),
+            })
+        yield sse({"done": True, "session_id": sid})
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@api_router.get("/ai/sessions")
+async def ai_sessions(user: dict = Depends(require_roles("admin", "supervisor"))):
+    pipeline = [
+        {"$match": {"user_id": user["id"]}},
+        {"$sort": {"timestamp": 1}},
+        {"$group": {"_id": "$session_id", "title": {"$first": "$content"}, "last": {"$last": "$timestamp"}}},
+        {"$sort": {"last": -1}},
+        {"$limit": 20},
+    ]
+    items = await db.ai_messages.aggregate(pipeline).to_list(20)
+    return [{"session_id": i["_id"], "title": (i["title"] or "")[:60], "last": i["last"]} for i in items]
+
+
+@api_router.get("/ai/sessions/{session_id}/messages")
+async def ai_session_messages(session_id: str, user: dict = Depends(require_roles("admin", "supervisor"))):
+    return await db.ai_messages.find(
+        {"session_id": session_id, "user_id": user["id"]},
+        {"_id": 0, "role": 1, "content": 1, "timestamp": 1},
+    ).sort("timestamp", 1).to_list(200)
+
+
+class AiReportPayload(BaseModel):
+    period: str = "today"
+
+
+@api_router.post("/ai/report")
+async def ai_report(payload: AiReportPayload, request: Request,
+                    user: dict = Depends(require_roles("admin", "supervisor"))):
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=503, detail="Layanan AI belum dikonfigurasi")
+    now = datetime.now(timezone.utc)
+    if payload.period == "week":
+        start = (now - timedelta(days=7)).date().isoformat()
+        period_label = "7 hari terakhir"
+    else:
+        start = now.date().isoformat()
+        period_label = "hari ini"
+    items = await db.activities.find({"scan_timestamp": {"$gte": start}}, {"_id": 0}).sort("scan_timestamp", 1).to_list(2000)
+    settings = await get_settings_doc()
+    rows = "\n".join(
+        f"- {a.get('scan_timestamp','')[:16]} | {a.get('inmate_name')} ({a.get('inmate_reg')}) | "
+        f"{a.get('scan_location') or '-'} | {a.get('activity_category_label') or '-'} | "
+        f"kondisi: {a.get('inmate_condition')} | status: {a.get('status')}"
+        for a in items) or "(tidak ada aktivitas pada periode ini)"
+    prompt = (
+        f"Buatkan laporan resmi aktivitas warga binaan periode {period_label} untuk {settings['institution_name']}. "
+        f"Struktur laporan: (1) Judul, (2) Ringkasan eksekutif, (3) Rekapitulasi per kategori aktivitas, "
+        f"(4) Rekapitulasi per lokasi, (5) Temuan penting termasuk warga binaan berkondisi sakit/perlu perhatian "
+        f"dan aktivitas yang ditolak/menunggu persetujuan, (6) Rekomendasi tindak lanjut. "
+        f"Tulis naratif formal dalam Bahasa Indonesia.\n\nDATA AKTIVITAS ({len(items)} entri):\n{rows}"
+    )
+
+    async def gen():
+        try:
+            chat = LlmChat(api_key=EMERGENT_LLM_KEY, session_id=f"report-{new_id()}",
+                           system_message=AI_SYSTEM).with_model(CLAUDE_PROVIDER, CLAUDE_MODEL)
+            async for ev in chat.stream_message(UserMessage(text=prompt)):
+                if isinstance(ev, TextDelta):
+                    yield sse({"text": ev.content})
+                elif isinstance(ev, StreamDone):
+                    break
+        except Exception as e:
+            logger.error(f"AI report error: {e}")
+            yield sse({"error": "Layanan AI sedang bermasalah. Coba lagi."})
+        yield sse({"done": True})
+
+    await log_audit(user, "activities", "-", "export", {"type": "ai_report", "period": payload.period}, request)
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 app.include_router(api_router)

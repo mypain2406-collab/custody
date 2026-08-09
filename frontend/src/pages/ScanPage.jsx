@@ -133,7 +133,7 @@ export default function ScanPage() {
             <ScanLine className="h-4 w-4" strokeWidth={2} />
           </div>
           <div>
-            <div className="font-heading font-black text-sm leading-none">{settings?.app_title || "SIMAPAN"}</div>
+            <div className="font-heading font-black text-sm leading-none">{settings?.app_title || "KAWAN PAS"}</div>
             <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 mt-0.5">Mode Pemindaian</div>
           </div>
         </div>

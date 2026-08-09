@@ -14,6 +14,7 @@ import AuditLog from "@/pages/AuditLog";
 import Settings from "@/pages/Settings";
 import BarcodeCenter from "@/pages/BarcodeCenter";
 import ScanPage from "@/pages/ScanPage";
+import AiAssistant from "@/pages/AiAssistant";
 
 function Protected({ children, roles }) {
   const { user, loading } = useAuth();
@@ -47,6 +48,7 @@ function App() {
           <Route path="/scan" element={<Protected roles={["operator", "admin", "supervisor"]}><ScanPage /></Protected>} />
           <Route element={<Protected><Layout /></Protected>}>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/ai" element={<Protected roles={["admin", "supervisor"]}><AiAssistant /></Protected>} />
             <Route path="/inmates" element={<Inmates />} />
             <Route path="/activities" element={<Activities />} />
             <Route path="/approvals" element={<Protected roles={["admin", "supervisor"]}><Approvals /></Protected>} />
