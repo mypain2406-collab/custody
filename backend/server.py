@@ -981,6 +981,7 @@ class AiReportPayload(BaseModel):
     officer_name: Optional[str] = None
     officer_nip: Optional[str] = None
     recipient: Optional[str] = None
+    place: Optional[str] = None
     location_id: Optional[str] = None
     category: Optional[str] = None
 
@@ -1023,6 +1024,7 @@ async def ai_report(payload: AiReportPayload, request: Request,
     officer = (payload.officer_name or "").strip() or "____________________"
     nip = (payload.officer_nip or "").strip() or "____________________"
     recipient = (payload.recipient or "").strip() or f"Kepala {settings['institution_name']}"
+    place = (payload.place or "").strip() or "________________"
     today_id = now.strftime("%d") + " " + [
         "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
         "Juli", "Agustus", "September", "Oktober", "November", "Desember",
@@ -1044,9 +1046,7 @@ async def ai_report(payload: AiReportPayload, request: Request,
         "V. TINDAK LANJUT\n- Melaporkan kepada pimpinan. (tambahkan rekomendasi tindak lanjut bila ada temuan medis "
         "atau aktivitas bermasalah)\n\n"
         "VI. PENUTUP\n- Demikian Laporan Atensi ini dibuat. Selanjutnya mohon arahan dan petunjuk, terima kasih.\n\n"
-        f"(Kota), {today_id}\nAnggota jaga\n\n\nTTD\n\n\n{officer}\nNIP. {nip}\n\n"
-        f"Catatan: nama kota pada baris tanggal diambil dari nama institusi '{settings['institution_name']}' bila memuat "
-        "nama kota; jika tidak ada, tulis garis kosong '________________'.\n\n"
+        f"{place}, {today_id}\nAnggota jaga\n\n\nTTD\n\n\n{officer}\nNIP. {nip}\n\n"
         f"DATA AKTIVITAS ({len(items)} entri):\n{rows}"
     )
 

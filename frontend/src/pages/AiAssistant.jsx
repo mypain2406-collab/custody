@@ -170,6 +170,7 @@ function Report() {
   const [recipient, setRecipient] = useState(() => localStorage.getItem("report_recipient") || "");
   const [officer, setOfficer] = useState(() => localStorage.getItem("officer_name") || "");
   const [nip, setNip] = useState(() => localStorage.getItem("officer_nip") || "");
+  const [place, setPlace] = useState(() => localStorage.getItem("report_place") || "");
   const [output, setOutput] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -179,12 +180,14 @@ function Report() {
     localStorage.setItem("officer_name", officer);
     localStorage.setItem("officer_nip", nip);
     localStorage.setItem("report_recipient", recipient);
+    localStorage.setItem("report_place", place);
     try {
       await streamSSE("/ai/report", {
         period,
         officer_name: officer,
         officer_nip: nip,
         recipient,
+        place,
         location_id: locationId !== "all" ? locationId : undefined,
         category: category !== "all" ? category : undefined,
       }, (delta) => setOutput((o) => o + delta));
@@ -234,7 +237,7 @@ function Report() {
           </Select>
         </div>
         <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground pt-2">Tujuan & Penandatangan</div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <Input
             className="rounded-none"
             placeholder="Kepada Yth. (mis. Kepala Lapas Kelas IIA Palangka Raya)"
@@ -255,6 +258,13 @@ function Report() {
             value={nip}
             onChange={(e) => setNip(e.target.value)}
             data-testid="ai-report-officer-nip"
+          />
+          <Input
+            className="rounded-none"
+            placeholder="Tempat/Kota laporan (mis. Palangka Raya)"
+            value={place}
+            onChange={(e) => setPlace(e.target.value)}
+            data-testid="ai-report-place"
           />
         </div>
       </div>
