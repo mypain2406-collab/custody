@@ -1,4 +1,4 @@
-# PRD — SIMAPAN (Sistem Monitoring Aktivitas Warga Binaan)
+# PRD — KAWAN PAS (Sistem Monitoring Aktivitas Warga Binaan)
 
 ## Problem Statement (ringkasan)
 Sistem pencatatan aktivitas warga binaan lapas berbasis pemindaian barcode: tabel inmates, users (4 role), activities (dengan approval workflow), audit_log, locations (GPS tag), approvals (riwayat status). Fitur utama: ekspor Excel, kategori yang bisa diedit admin, pusat unduh barcode (warga binaan + lokasi), manajemen akun operator per perangkat/lokasi, dan pencatatan otomatis saat barcode discan di titik lokasi.
@@ -27,10 +27,17 @@ Sistem pencatatan aktivitas warga binaan lapas berbasis pemindaian barcode: tabe
 - Dashboard statistik real-time, log audit dengan filter
 - Testing: 16/16 pytest + e2e Playwright lolos; perbaikan sanitasi _id audit & parens tanggal
 
+## Update 9 Agu 2026 (iterasi 2)
+- Rename aplikasi SIMAPAN → KAWAN PAS (DB settings + semua fallback kode)
+- Integrasi Claude AI (claude-sonnet-4-6 via Emergent Universal Key): halaman /ai khusus admin & supervisor
+  - Asisten Chat: tanya-jawab data sistem real-time, streaming SSE, riwayat sesi persisten di MongoDB (ai_messages)
+  - Laporan Otomatis: laporan naratif resmi periode hari ini / 7 hari, streaming, tombol salin
+- Testing: 11/11 pytest AI + e2e lolos (role gate operator 403, regresi approvals & Excel OK)
+
 ## Backlog
 - P0: (kosong)
-- P1: Upload foto warga binaan & foto bukti aktivitas (object storage); cetak kartu barcode massal (PDF)
-- P2: Laporan rekap per periode per lokasi; notifikasi peringatan medis ke supervisor; mode offline scan dengan sinkronisasi
+- P1: Upload foto warga binaan & foto bukti aktivitas (object storage); cetak kartu barcode massal (PDF); cache 30-60s untuk build_ai_context bila chat dipakai intensif
+- P2: Laporan rekap per periode per lokasi; notifikasi peringatan medis ke supervisor; mode offline scan dengan sinkronisasi; unduh laporan AI sebagai PDF/DOCX
 
 ## Next Tasks
 1. Konfirmasi kebutuhan cetak kartu barcode massal
