@@ -1,0 +1,42 @@
+{
+  "summary": "Comprehensive backend + frontend testing of SIMAPAN. 16/16 pytest cases passing (auth, dashboard, inmates CRUD + QR, locations CRUD + QR, settings incl. category rename, activity scan + approve + reject + Excel export, users management with role gating, audit logs). Playwright end-to-end: admin login → CRUD inmate/lokasi → barcode grid → settings category rename → verify new label appears in Activities filter → operator login redirects to /scan with assigned location pre-filled → manual barcode scan (WB-2024-0001) → confirm + submit succeeds with success toast → operator blocked from /users (redirected to /scan) → supervisor approvals page allows approve/reject. Fixed one backend serialization bug found during testing.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/audit-logs", "issue": "Returned 500 because audit_log records store nested Mongo docs whose '_id' fields (leaked by insert_one mutation in log_audit callers for inmates/activities/locations) are not JSON-serializable. Only top-level _id was stripped by projection. FIXED by adding recursive _strip_ids sanitizer in list_audit endpoint. Root cause remains: log_audit callers should pop '_id' from 'after' payloads BEFORE persisting (e.g. inmates.create passes doc after insert_one). Recommend fix at source too."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Multiple dialogs (Inmates form, Users form, Activity detail)", "issues": ["Radix Dialog console warning: 'Missing Description or aria-describedby for DialogContent' — a11y hint, non-blocking."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_simapan.py",
+    "/app/test_reports/pytest/simapan_results.xml"
+  ],
+  "action_items": [
+    "Consider fixing log_audit callers (inmates create/update, locations create/update, activities create) to strip '_id' from 'after'/'before' payloads before persisting to audit_log — currently mitigated only on read.",
+    "Add aria-describedby (or DialogDescription) to all DialogContent components to silence Radix a11y warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py:606 — 'doc' passed to log_audit still contains '_id' from insert_one mutation; nested _id leaks into audit_log storage (same for inmates.create/update, locations.create/update).",
+    "server.py:547,634 — date_to concatenation uses Python precedence 'a + b if cond else c' which currently evaluates '(a + b) if cond else c' — reads as intended but fragile; consider explicit parens.",
+    "server.py:24 — CORS default '*' + allow_credentials=True is not spec-compliant; explicit origins recommended (env CORS_ORIGINS is '*' currently).",
+    "ScanPage.jsx — html5-qrcode instantiated inside effect starts even when running=false may race with strict-mode double-invoke; consider a stable init guard.",
+    "server.py file is 921 lines — should be split into routers/modules (auth, inmates, activities, locations, users, settings, audit)."
+  ],
+  "updated_files": [
+    "/app/backend/server.py (added _strip_ids sanitizer for audit-logs)",
+    "/app/backend/tests/test_simapan.py (new comprehensive pytest suite)"
+  ],
+  "success_rate": {"backend": "100% (16/16)", "frontend": "100% of tested critical flows"},
+  "test_credentials": "admin/Admin@123, supervisor/Supervisor@123, operator1/Operator@123 (verified working)",
+  "seed_data_creation": "Backend seeded automatically on startup: 3 inmates (WB-2024-0001..0003), 6 locations incl. Masjid At-Taubah, admin+supervisor+operator1. Test suite creates TEST_* prefixed data and cleans up after itself.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend test suite at /app/backend/tests/test_simapan.py is idempotent and covers full CRUD + role gating + export. Frontend has consistent data-testid attributes across pages. Reject flow requires ≥1 pending activity — run operator scan first to create fresh submissions before testing reject in isolation. Camera not available in headless — always use scan-manual-code-input.",
+  "rca of the issue": "Audit-logs 500: log_audit(inmates create, etc.) writes 'after' dict which retains '_id' (ObjectId) because motor's insert_one mutates the passed dict. Projection {\"_id\":0} in read query only removes top-level _id, not nested. FastAPI's default JSON encoder fails on ObjectId → ValueError. Mitigation applied: recursive strip on read. Proper fix: strip _id in log_audit before storing OR use jsonable_encoder / pop _id in each caller after insert_one."
+}
