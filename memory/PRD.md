@@ -46,6 +46,9 @@ Sistem pencatatan aktivitas warga binaan lapas berbasis pemindaian barcode: tabe
 ## Update 9 Agu 2026 (iterasi 6)
 - Laporan Atensi: kolom isian Tempat/Kota untuk baris tanggal laporan (tersimpan di localStorage, field `place` di backend); terverifikasi hasil "Palangka Raya, 09 Agustus 2026"
 
+## Update 9 Agu 2026 (iterasi 7)
+- Cek kesiapan deployment: LULUS tanpa blocker (env bersih, port & CORS benar, kompilasi OK) — siap deploy
+
 ## Backlog
 - P0: (kosong)
 - P1: Upload foto warga binaan & foto bukti aktivitas (object storage); cetak kartu barcode massal (PDF); cache 30-60s untuk build_ai_context bila chat dipakai intensif
