@@ -103,6 +103,20 @@ def require_roles(*roles):
     return dep
 
 
+def _strip_ids(obj):
+    if isinstance(obj, dict):
+        return {k: _strip_ids(v) for k, v in obj.items() if k != "_id"}
+    if isinstance(obj, list):
+        return [_strip_ids(v) for v in obj]
+    try:
+        from bson import ObjectId
+        if isinstance(obj, ObjectId):
+            return str(obj)
+    except Exception:
+        pass
+    return obj
+
+
 async def log_audit(user: dict, entity_type: str, entity_id: str, action: str,
                     changes: Optional[dict] = None, request: Optional[Request] = None):
     doc = {
@@ -112,7 +126,7 @@ async def log_audit(user: dict, entity_type: str, entity_id: str, action: str,
         "entity_type": entity_type,
         "entity_id": entity_id,
         "action": action,
-        "changes_json": changes or {},
+        "changes_json": _strip_ids(changes or {}),
         "ip_address": request.client.host if request and request.client else None,
         "device_info": request.headers.get("user-agent") if request else None,
         "timestamp": now_iso(),
@@ -544,7 +558,7 @@ async def list_activities(status: Optional[str] = None, category: Optional[str] 
         if date_from:
             q["scan_timestamp"]["$gte"] = date_from
         if date_to:
-            q["scan_timestamp"]["$lte"] = date_to + "T23:59:59+00:00" if len(date_to) == 10 else date_to
+            q["scan_timestamp"]["$lte"] = (date_to + "T23:59:59+00:00") if len(date_to) == 10 else date_to
     items = await db.activities.find(q, {"_id": 0}).sort("scan_timestamp", -1).to_list(5000)
     return items
 
@@ -631,7 +645,7 @@ async def export_activities(status: Optional[str] = None, category: Optional[str
         if date_from:
             q["scan_timestamp"]["$gte"] = date_from
         if date_to:
-            q["scan_timestamp"]["$lte"] = date_to + "T23:59:59+00:00" if len(date_to) == 10 else date_to
+            q["scan_timestamp"]["$lte"] = (date_to + "T23:59:59+00:00") if len(date_to) == 10 else date_to
     items = await db.activities.find(q, {"_id": 0}).sort("scan_timestamp", -1).to_list(20000)
 
     wb = Workbook()
@@ -757,20 +771,6 @@ async def delete_activity(activity_id: str, request: Request,
 
 
 # ---------------- Audit ----------------
-
-def _strip_ids(obj):
-    if isinstance(obj, dict):
-        return {k: _strip_ids(v) for k, v in obj.items() if k != "_id"}
-    if isinstance(obj, list):
-        return [_strip_ids(v) for v in obj]
-    try:
-        from bson import ObjectId
-        if isinstance(obj, ObjectId):
-            return str(obj)
-    except Exception:
-        pass
-    return obj
-
 
 @api_router.get("/audit-logs")
 async def list_audit(entity_type: Optional[str] = None, action: Optional[str] = None,
