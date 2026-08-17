@@ -38,16 +38,6 @@ return (
     className="pointer-events-none absolute inset-0 opacity-[0.06] bg-center bg-no-repeat bg-contain"
     style={{ backgroundImage: `url(${KEMENIMIPAS_LOGO_URL})` }}
     />
-  <div className="relative z-10 flex items-center gap-3">
-  <div className="h-10 w-10 bg-white flex items-center justify-center overflow-hidden">
-  <img
-    src={`${KEMENIMIPAS_LOGO_URL}?width=80`}
-    alt="Logo Kementerian Imigrasi dan Pemasyarakatan"
-    className="h-full w-full object-contain"
-    />
-  </div>
-  <span className="text-xs font-bold uppercase tracking-[0.3em]">Ditjen Pemasyarakatan</span>
-  </div>
   
   <div className="relative z-10 flex-1 flex items-center justify-center py-8">
   <img
