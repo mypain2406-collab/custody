@@ -4,7 +4,7 @@ import { fetcher, downloadUrl } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Download, Search } from "lucide-react";
+import { Download, Search, IdCard } from "lucide-react";
 
 export default function BarcodeCenter() {
   const { data: inmates, isLoading: li } = useSWR("/inmates?status=active", fetcher);
@@ -17,12 +17,19 @@ export default function BarcodeCenter() {
 
   return (
     <div className="space-y-6" data-testid="barcode-center-page">
-      <div>
-        <div className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">Pusat Unduhan</div>
-        <h1 className="text-3xl sm:text-4xl font-black tracking-tight mt-1">Unduh Barcode</h1>
-        <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-          Unduh barcode QR warga binaan untuk dicetak sebagai kartu identitas, dan barcode lokasi untuk ditempel di titik perangkat pemindaian.
-        </p>
+      <div className="flex items-end justify-between flex-wrap gap-4">
+        <div>
+          <div className="text-xs font-bold uppercase tracking-[0.3em] text-muted-foreground">Pusat Unduhan</div>
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight mt-1">Unduh Barcode</h1>
+          <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
+            Unduh barcode QR warga binaan untuk dicetak sebagai kartu identitas, dan barcode lokasi untuk ditempel di titik perangkat pemindaian.
+          </p>
+        </div>
+        <a href={downloadUrl("/inmates/cards/batch")} data-testid="print-all-cards-btn">
+          <Button className="rounded-none font-bold uppercase tracking-widest text-xs">
+            <IdCard className="h-4 w-4 mr-2" /> Cetak Semua Kartu (PDF)
+          </Button>
+        </a>
       </div>
 
       <Tabs defaultValue="inmates">
@@ -46,7 +53,12 @@ export default function BarcodeCenter() {
                 <div className="text-[10px] text-muted-foreground">Blok {i.cell_block || "-"}</div>
                 <a href={downloadUrl(`/inmates/${i.id}/barcode?download=1`)} className="w-full mt-3" data-testid={`barcode-dl-${i.registration_number}`}>
                   <Button variant="outline" size="sm" className="rounded-none w-full text-[10px] font-bold uppercase tracking-wider">
-                    <Download className="h-3 w-3 mr-1" /> Unduh
+                    <Download className="h-3 w-3 mr-1" /> Unduh QR
+                  </Button>
+                </a>
+                <a href={downloadUrl(`/inmates/${i.id}/card`)} className="w-full mt-1.5" data-testid={`card-dl-${i.registration_number}`}>
+                  <Button size="sm" className="rounded-none w-full text-[10px] font-bold uppercase tracking-wider">
+                    <IdCard className="h-3 w-3 mr-1" /> Cetak Kartu (PDF)
                   </Button>
                 </a>
               </div>
