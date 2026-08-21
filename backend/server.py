@@ -147,22 +147,24 @@ DEFAULT_SETTINGS = {
     "app_subtitle": "Sistem Monitoring Aktivitas Warga Binaan",
     "institution_name": "Lembaga Pemasyarakatan",
     "activity_categories": [
-        {"key": "keagamaan", "label": "Pembinaan Keagamaan"},
-        {"key": "keterampilan", "label": "Pembinaan Keterampilan"},
-        {"key": "kesehatan", "label": "Layanan Kesehatan"},
-        {"key": "pendidikan", "label": "Pendidikan & Pelatihan"},
-        {"key": "olahraga", "label": "Olahraga & Rekreasi"},
-        {"key": "keamanan", "label": "Titik Keamanan"},
-        {"key": "lainnya", "label": "Lainnya"},
+        {"key": "ibadah", "label": "Ibadah", "module": "pembinaan"},
+        {"key": "kerja_bengkel", "label": "Kerja Bengkel", "module": "pembinaan"},
+        {"key": "keagamaan", "label": "Pembinaan Keagamaan", "module": "pembinaan"},
+        {"key": "keterampilan", "label": "Pembinaan Keterampilan", "module": "pembinaan"},
+        {"key": "kesehatan", "label": "Layanan Kesehatan", "module": "pembinaan"},
+        {"key": "pendidikan", "label": "Pendidikan & Pelatihan", "module": "pembinaan"},
+        {"key": "olahraga", "label": "Olahraga & Rekreasi", "module": "pembinaan"},
+        {"key": "keamanan", "label": "Titik Keamanan", "module": "keamanan"},
+        {"key": "lainnya", "label": "Lainnya", "module": "pembinaan"},
     ],
     "location_types": [
-        {"key": "religious", "label": "Keagamaan"},
-        {"key": "skills", "label": "Keterampilan"},
-        {"key": "health", "label": "Kesehatan"},
-        {"key": "education", "label": "Pendidikan"},
-        {"key": "sports", "label": "Olahraga"},
-        {"key": "security", "label": "Keamanan"},
-        {"key": "other", "label": "Lainnya"},
+        {"key": "religious", "label": "Keagamaan", "module": "pembinaan"},
+        {"key": "skills", "label": "Keterampilan", "module": "pembinaan"},
+        {"key": "health", "label": "Kesehatan", "module": "pembinaan"},
+        {"key": "education", "label": "Pendidikan", "module": "pembinaan"},
+        {"key": "sports", "label": "Olahraga", "module": "pembinaan"},
+        {"key": "security", "label": "Keamanan", "module": "keamanan"},
+        {"key": "other", "label": "Lainnya", "module": "pembinaan"},
     ],
     "inmate_conditions": [
         {"key": "baik", "label": "Baik"},
@@ -179,6 +181,42 @@ async def get_settings_doc() -> dict:
         await db.settings.insert_one(s)
     s.pop("_id", None)
     return s
+
+
+async def migrate_settings_modules():
+    """Migrasi non-destruktif: tandai module pembinaan/keamanan pada kategori & tipe lokasi
+    yang sudah ada di DB, dan tambahkan kategori baru (ibadah, kerja_bengkel) bila belum ada."""
+    s = await get_settings_doc()
+    default_cat_by_key = {c["key"]: c for c in DEFAULT_SETTINGS["activity_categories"]}
+    default_loc_by_key = {c["key"]: c for c in DEFAULT_SETTINGS["location_types"]}
+    changed = False
+
+    cats = s.get("activity_categories", [])
+    existing_cat_keys = {c["key"] for c in cats}
+    for c in cats:
+        if not c.get("module"):
+            c["module"] = default_cat_by_key.get(c["key"], {}).get("module", "pembinaan")
+            changed = True
+    for key, dc in default_cat_by_key.items():
+        if key not in existing_cat_keys:
+            cats.append(dict(dc))
+            changed = True
+
+    loc_types = s.get("location_types", [])
+    existing_loc_keys = {c["key"] for c in loc_types}
+    for c in loc_types:
+        if not c.get("module"):
+            c["module"] = default_loc_by_key.get(c["key"], {}).get("module", "pembinaan")
+            changed = True
+    for key, dc in default_loc_by_key.items():
+        if key not in existing_loc_keys:
+            loc_types.append(dict(dc))
+            changed = True
+
+    if changed:
+        await db.settings.update_one(
+            {"key": "app_settings"},
+            {"$set": {"activity_categories": cats, "location_types": loc_types}})
 
 
 @api_router.get("/settings")
@@ -341,6 +379,14 @@ class InmatePayload(BaseModel):
     mp_1_2: Optional[str] = None
     mp_2_3: Optional[str] = None
     program_notes: Optional[str] = None
+    # Rekam medis detail
+    blood_type: Optional[str] = None
+    height_cm: Optional[int] = None
+    weight_kg: Optional[int] = None
+    allergies: Optional[str] = None
+    chronic_conditions: Optional[str] = None
+    current_medications: Optional[str] = None
+    medical_notes: Optional[str] = None
 
 
 @api_router.get("/inmates")
@@ -455,6 +501,171 @@ async def inmate_barcode(inmate_id: str, download: bool = False,
     return StreamingResponse(io.BytesIO(png), media_type="image/png", headers=headers)
 
 
+# ---------------- Kartu Identitas (ukuran kartu ATM/CR80) ----------------
+
+CARD_W_MM = 85.6
+CARD_H_MM = 54.0
+
+
+def _fetch_photo_reader(photo_url: Optional[str]):
+    if not photo_url:
+        return None
+    try:
+        from reportlab.lib.utils import ImageReader
+        if photo_url.startswith("data:image"):
+            import base64 as _b64
+            header, b64data = photo_url.split(",", 1)
+            return ImageReader(io.BytesIO(_b64.b64decode(b64data)))
+        if photo_url.startswith("http://") or photo_url.startswith("https://"):
+            import urllib.request
+            req = urllib.request.Request(photo_url, headers={"User-Agent": "KAWAN-PAS/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = resp.read()
+            return ImageReader(io.BytesIO(data))
+    except Exception:
+        return None
+    return None
+
+
+def _draw_id_card(c, x_mm, y_mm, inmate: dict, institution_name: str, app_title: str):
+    from reportlab.lib.units import mm
+    from reportlab.lib.utils import ImageReader
+    x, y = x_mm * mm, y_mm * mm
+    w, h = CARD_W_MM * mm, CARD_H_MM * mm
+
+    c.saveState()
+    c.setStrokeColorRGB(0, 0, 0)
+    c.setLineWidth(1)
+    c.rect(x, y, w, h, stroke=1, fill=0)
+
+    # Header strip
+    c.setFillColorRGB(0.04, 0.04, 0.04)
+    c.rect(x, y + h - 8 * mm, w, 8 * mm, stroke=0, fill=1)
+    c.setFillColorRGB(1, 1, 1)
+    c.setFont("Helvetica-Bold", 6.5)
+    c.drawString(x + 3 * mm, y + h - 5.3 * mm, institution_name.upper()[:42])
+    c.setFont("Helvetica", 5)
+    c.drawString(x + 3 * mm, y + h - 7.3 * mm, "KARTU IDENTITAS WARGA BINAAN")
+
+    # Photo box
+    photo_x, photo_y = x + 3 * mm, y + 3 * mm
+    photo_w, photo_h = 20 * mm, h - 13 * mm
+    c.setFillColorRGB(0.92, 0.92, 0.92)
+    c.rect(photo_x, photo_y, photo_w, photo_h, stroke=1, fill=1)
+    photo_reader = _fetch_photo_reader(inmate.get("photo_url"))
+    if photo_reader is not None:
+        try:
+            c.drawImage(photo_reader, photo_x, photo_y, width=photo_w, height=photo_h,
+                       preserveAspectRatio=True, mask="auto")
+        except Exception:
+            photo_reader = None
+    if photo_reader is None:
+        initials = "".join([p[0] for p in (inmate.get("full_name") or "?").split()[:2]]).upper()
+        c.setFillColorRGB(0.5, 0.5, 0.5)
+        c.setFont("Helvetica-Bold", 14)
+        c.drawCentredString(photo_x + photo_w / 2, photo_y + photo_h / 2 - 3, initials or "?")
+
+    # Text block
+    text_x = photo_x + photo_w + 3 * mm
+    text_top = y + h - 11 * mm
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("Helvetica-Bold", 8.5)
+    c.drawString(text_x, text_top, (inmate.get("full_name") or "-")[:26])
+    c.setFont("Helvetica", 6)
+    rows = [
+        ("No. Register", inmate.get("registration_number") or "-"),
+        ("Blok", inmate.get("cell_block") or "-"),
+        ("Gol. Darah", inmate.get("blood_type") or "-"),
+        ("Agama", inmate.get("religion") or "-"),
+    ]
+    ty = text_top - 4.2 * mm
+    for label, val in rows:
+        c.setFont("Helvetica", 5.5)
+        c.drawString(text_x, ty, f"{label}:")
+        c.setFont("Helvetica-Bold", 5.5)
+        c.drawString(text_x + 15 * mm, ty, str(val)[:18])
+        ty -= 3.4 * mm
+
+    if inmate.get("medical_alert"):
+        c.setFillColorRGB(0.6, 0, 0)
+        c.setFont("Helvetica-Bold", 5)
+        c.drawString(text_x, y + 3.5 * mm, ("PERINGATAN MEDIS: " + inmate["medical_alert"])[:34])
+
+    # QR code
+    qr_size = 16 * mm
+    qr_x = x + w - qr_size - 3 * mm
+    qr_y = y + 3 * mm
+    png = make_qr_png(inmate.get("barcode_data") or inmate["registration_number"])
+    c.drawImage(ImageReader(io.BytesIO(png)), qr_x, qr_y, width=qr_size, height=qr_size)
+    c.setFont("Helvetica", 4.5)
+    c.drawCentredString(qr_x + qr_size / 2, qr_y - 2.2, app_title[:20])
+
+    c.restoreState()
+
+
+@api_router.get("/inmates/{inmate_id}/card")
+async def inmate_card(inmate_id: str, user: dict = Depends(get_current_user)):
+    from reportlab.pdfgen import canvas as pdfcanvas
+    from reportlab.lib.units import mm
+    inmate = await db.inmates.find_one({"id": inmate_id}, {"_id": 0})
+    if not inmate:
+        raise HTTPException(status_code=404, detail="Warga binaan tidak ditemukan")
+    settings = await get_settings_doc()
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=(CARD_W_MM * mm, CARD_H_MM * mm))
+    _draw_id_card(c, 0, 0, inmate, settings.get("institution_name", ""), settings.get("app_title", "KAWAN PAS"))
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    fname = f"kartu_{inmate['registration_number']}.pdf"
+    return StreamingResponse(buf, media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@api_router.get("/inmates/cards/batch")
+async def inmates_cards_batch(status: Optional[str] = "active",
+                              user: dict = Depends(require_roles("admin", "supervisor"))):
+    from reportlab.pdfgen import canvas as pdfcanvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    q = {}
+    if status:
+        q["status"] = status
+    inmates = await db.inmates.find(q, {"_id": 0}).sort("full_name", 1).to_list(2000)
+    if not inmates:
+        raise HTTPException(status_code=404, detail="Tidak ada warga binaan untuk dicetak")
+    settings = await get_settings_doc()
+    inst = settings.get("institution_name", "")
+    title = settings.get("app_title", "KAWAN PAS")
+
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=A4)
+    page_w, page_h = A4
+    margin = 10 * mm
+    gap_x, gap_y = 4 * mm, 4 * mm
+    cols = int((page_w - 2 * margin + gap_x) // (CARD_W_MM * mm + gap_x))
+    cols = max(cols, 1)
+    rows = int((page_h - 2 * margin + gap_y) // (CARD_H_MM * mm + gap_y))
+    rows = max(rows, 1)
+    per_page = cols * rows
+
+    for idx, inmate in enumerate(inmates):
+        pos = idx % per_page
+        if idx > 0 and pos == 0:
+            c.showPage()
+        col = pos % cols
+        row = pos // cols
+        x_mm = (margin + col * (CARD_W_MM * mm + gap_x)) / mm
+        y_mm = (page_h - margin - (row + 1) * CARD_H_MM * mm - row * gap_y) / mm
+        _draw_id_card(c, x_mm, y_mm, inmate, inst, title)
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    fname = f"kartu_warga_binaan_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    return StreamingResponse(buf, media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
 # ---------------- Locations ----------------
 
 class LocationPayload(BaseModel):
@@ -525,6 +736,367 @@ async def location_barcode(location_id: str, download: bool = False,
         fname = f"barcode_lokasi_{loc['location_name'].replace(' ', '_')}.png"
         headers["Content-Disposition"] = f'attachment; filename="{fname}"'
     return StreamingResponse(io.BytesIO(png), media_type="image/png", headers=headers)
+
+
+# ---------------- Keamanan: Lalu Lintas Warga Binaan ----------------
+
+class SecurityCrossingPayload(BaseModel):
+    inmate_id: Optional[str] = None
+    barcode_code: Optional[str] = None
+    location_id: Optional[str] = None
+    direction: str = "keluar"  # masuk | keluar
+    purpose: Optional[str] = None
+    escort_officer: Optional[str] = None
+    notes: Optional[str] = None
+    scan_timestamp: Optional[str] = None
+
+
+DIRECTION_LABEL = {"masuk": "Masuk", "keluar": "Keluar"}
+
+
+@api_router.get("/security/crossings")
+async def list_crossings(location_id: Optional[str] = None, inmate_id: Optional[str] = None,
+                         direction: Optional[str] = None,
+                         date_from: Optional[str] = None, date_to: Optional[str] = None,
+                         user: dict = Depends(get_current_user)):
+    q = {}
+    if location_id:
+        q["location_id"] = location_id
+    if inmate_id:
+        q["inmate_id"] = inmate_id
+    if direction:
+        q["direction"] = direction
+    if user["role"] == "operator":
+        q["operator_user_id"] = user["id"]
+    if date_from or date_to:
+        q["scan_timestamp"] = {}
+        if date_from:
+            q["scan_timestamp"]["$gte"] = date_from
+        if date_to:
+            q["scan_timestamp"]["$lte"] = (date_to + "T23:59:59+00:00") if len(date_to) == 10 else date_to
+    items = await db.security_crossings.find(q, {"_id": 0}).sort("scan_timestamp", -1).to_list(5000)
+    return items
+
+
+@api_router.post("/security/crossings")
+async def create_crossing(payload: SecurityCrossingPayload, request: Request,
+                          user: dict = Depends(require_roles("admin", "supervisor", "operator"))):
+    inmate = None
+    if payload.inmate_id:
+        inmate = await db.inmates.find_one({"id": payload.inmate_id})
+    elif payload.barcode_code:
+        inmate = await db.inmates.find_one({"$or": [
+            {"barcode_data": payload.barcode_code},
+            {"registration_number": payload.barcode_code}]})
+    if not inmate:
+        raise HTTPException(status_code=404, detail="Warga binaan tidak ditemukan dari kode tersebut")
+
+    location_name = None
+    if payload.location_id:
+        loc = await db.locations.find_one({"id": payload.location_id})
+        if loc:
+            location_name = loc["location_name"]
+    if not location_name and user.get("assigned_location"):
+        loc = await db.locations.find_one({"id": user["assigned_location"]})
+        if loc:
+            location_name = loc["location_name"]
+            payload.location_id = loc["id"]
+
+    direction = payload.direction if payload.direction in ("masuk", "keluar") else "keluar"
+    doc = {
+        "id": new_id(),
+        "inmate_id": inmate["id"],
+        "inmate_name": inmate["full_name"],
+        "inmate_reg": inmate["registration_number"],
+        "cell_block": inmate.get("cell_block"),
+        "operator_user_id": user["id"],
+        "operator_name": user["full_name"],
+        "scan_timestamp": payload.scan_timestamp or now_iso(),
+        "checkpoint_location": location_name,
+        "location_id": payload.location_id,
+        "direction": direction,
+        "direction_label": DIRECTION_LABEL.get(direction, direction),
+        "purpose": payload.purpose,
+        "escort_officer": payload.escort_officer,
+        "notes": payload.notes,
+        "device_info": request.headers.get("user-agent"),
+        "created_at": now_iso(),
+    }
+    await db.security_crossings.insert_one(doc)
+    await log_audit(user, "security_crossings", doc["id"], "create", {"after": doc}, request)
+    doc.pop("_id", None)
+    return doc
+
+
+@api_router.get("/security/crossings/export")
+async def export_crossings(location_id: Optional[str] = None, direction: Optional[str] = None,
+                           date_from: Optional[str] = None, date_to: Optional[str] = None,
+                           request: Request = None, user: dict = Depends(get_current_user)):
+    q = {}
+    if location_id:
+        q["location_id"] = location_id
+    if direction:
+        q["direction"] = direction
+    if user["role"] == "operator":
+        q["operator_user_id"] = user["id"]
+    if date_from or date_to:
+        q["scan_timestamp"] = {}
+        if date_from:
+            q["scan_timestamp"]["$gte"] = date_from
+        if date_to:
+            q["scan_timestamp"]["$lte"] = (date_to + "T23:59:59+00:00") if len(date_to) == 10 else date_to
+    items = await db.security_crossings.find(q, {"_id": 0}).sort("scan_timestamp", -1).to_list(20000)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Lalu Lintas"
+    headers = ["No", "Waktu", "No. Registrasi", "Nama Warga Binaan", "Blok", "Titik Keamanan",
+               "Arah", "Tujuan/Keperluan", "Petugas Pengawal", "Catatan", "Operator"]
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="0A0A0A")
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(vertical="center")
+        ws.column_dimensions[get_column_letter(col)].width = max(14, len(h) + 4)
+    for i, a in enumerate(items, 1):
+        ws.append([
+            i, a.get("scan_timestamp"), a.get("inmate_reg"), a.get("inmate_name"), a.get("cell_block"),
+            a.get("checkpoint_location"), a.get("direction_label") or a.get("direction"),
+            a.get("purpose"), a.get("escort_officer"), a.get("notes"), a.get("operator_name"),
+        ])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"lalu_lintas_keamanan_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+    await log_audit(user, "security_crossings", "-", "export",
+                    {"filters": {"location_id": location_id, "direction": direction,
+                                 "date_from": date_from, "date_to": date_to}, "count": len(items)}, request)
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@api_router.get("/security/crossings/{crossing_id}")
+async def get_crossing(crossing_id: str, user: dict = Depends(get_current_user)):
+    a = await db.security_crossings.find_one({"id": crossing_id}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Data lalu lintas tidak ditemukan")
+    return a
+
+
+@api_router.delete("/security/crossings/{crossing_id}")
+async def delete_crossing(crossing_id: str, request: Request,
+                          user: dict = Depends(require_roles("admin"))):
+    existing = await db.security_crossings.find_one({"id": crossing_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Data lalu lintas tidak ditemukan")
+    await db.security_crossings.delete_one({"id": crossing_id})
+    await log_audit(user, "security_crossings", crossing_id, "delete", {"before": existing}, request)
+    return {"ok": True}
+
+
+def _wrap_lines(c, text, x, y, max_width, font="Helvetica", size=8, leading=10):
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    words = (text or "-").split()
+    line = ""
+    for w in words:
+        trial = f"{line} {w}".strip()
+        if stringWidth(trial, font, size) > max_width and line:
+            c.drawString(x, y, line)
+            y -= leading
+            line = w
+        else:
+            line = trial
+    if line:
+        c.drawString(x, y, line)
+        y -= leading
+    return y
+
+
+@api_router.get("/security/crossings/{crossing_id}/bon")
+async def crossing_bon(crossing_id: str, user: dict = Depends(get_current_user)):
+    from reportlab.pdfgen import canvas as pdfcanvas
+    from reportlab.lib.pagesizes import A6
+    from reportlab.lib.units import mm
+    a = await db.security_crossings.find_one({"id": crossing_id}, {"_id": 0})
+    if not a:
+        raise HTTPException(status_code=404, detail="Data lalu lintas tidak ditemukan")
+    settings = await get_settings_doc()
+    buf = io.BytesIO()
+    w, h = A6
+    c = pdfcanvas.Canvas(buf, pagesize=A6)
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawCentredString(w / 2, h - 14 * mm, settings.get("institution_name", "")[:40])
+    c.setFont("Helvetica-Bold", 9)
+    c.drawCentredString(w / 2, h - 19 * mm, "BON LALU LINTAS WARGA BINAAN")
+    c.setLineWidth(0.7)
+    c.line(8 * mm, h - 22 * mm, w - 8 * mm, h - 22 * mm)
+
+    ts = a.get("scan_timestamp", "")
+    try:
+        ts_disp = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%d-%m-%Y %H:%M")
+    except Exception:
+        ts_disp = ts
+
+    rows = [
+        ("No. Bon", a["id"][:8].upper()),
+        ("Waktu", ts_disp),
+        ("Nama", a.get("inmate_name") or "-"),
+        ("No. Register", a.get("inmate_reg") or "-"),
+        ("Blok", a.get("cell_block") or "-"),
+        ("Titik Keamanan", a.get("checkpoint_location") or "-"),
+        ("Arah", a.get("direction_label") or a.get("direction") or "-"),
+        ("Petugas Pengawal", a.get("escort_officer") or "-"),
+        ("Operator", a.get("operator_name") or "-"),
+    ]
+    y = h - 28 * mm
+    c.setFont("Helvetica", 8.5)
+    for label, val in rows:
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(8 * mm, y, f"{label}")
+        c.setFont("Helvetica", 8)
+        c.drawString(38 * mm, y, str(val)[:26])
+        y -= 6 * mm
+
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(8 * mm, y, "Tujuan/Keperluan")
+    y -= 5 * mm
+    c.setFont("Helvetica", 8)
+    y = _wrap_lines(c, a.get("purpose") or "-", 8 * mm, y, w - 16 * mm, size=8, leading=4.5 * mm)
+    if a.get("notes"):
+        y -= 2 * mm
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(8 * mm, y, "Catatan")
+        y -= 5 * mm
+        c.setFont("Helvetica", 8)
+        y = _wrap_lines(c, a.get("notes"), 8 * mm, y, w - 16 * mm, size=8, leading=4.5 * mm)
+
+    y -= 8 * mm
+    c.setFont("Helvetica", 8)
+    c.drawString(8 * mm, y, "Petugas Keamanan,")
+    c.drawString(w - 55 * mm, y, "Mengetahui,")
+    y -= 20 * mm
+    c.line(8 * mm, y, 45 * mm, y)
+    c.line(w - 55 * mm, y, w - 8 * mm, y)
+    y -= 4 * mm
+    c.setFont("Helvetica", 7)
+    c.drawString(8 * mm, y, "( ......................... )")
+    c.drawString(w - 55 * mm, y, "( ......................... )")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    fname = f"bon_lalulintas_{a.get('inmate_reg','')}_{a['id'][:8]}.pdf"
+    return StreamingResponse(buf, media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@api_router.get("/security/crossings/report")
+async def crossings_report(location_id: Optional[str] = None, direction: Optional[str] = None,
+                           date_from: Optional[str] = None, date_to: Optional[str] = None,
+                           request: Request = None, user: dict = Depends(get_current_user)):
+    from reportlab.pdfgen import canvas as pdfcanvas
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
+    q = {}
+    if location_id:
+        q["location_id"] = location_id
+    if direction:
+        q["direction"] = direction
+    if user["role"] == "operator":
+        q["operator_user_id"] = user["id"]
+    if date_from or date_to:
+        q["scan_timestamp"] = {}
+        if date_from:
+            q["scan_timestamp"]["$gte"] = date_from
+        if date_to:
+            q["scan_timestamp"]["$lte"] = (date_to + "T23:59:59+00:00") if len(date_to) == 10 else date_to
+    items = await db.security_crossings.find(q, {"_id": 0}).sort("scan_timestamp", 1).to_list(20000)
+    settings = await get_settings_doc()
+
+    buf = io.BytesIO()
+    page = landscape(A4)
+    c = pdfcanvas.Canvas(buf, pagesize=page)
+    w, h = page
+    margin = 12 * mm
+
+    def header():
+        c.setFont("Helvetica-Bold", 13)
+        c.drawCentredString(w / 2, h - margin, settings.get("institution_name", ""))
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(w / 2, h - margin - 5.5 * mm, "LAPORAN LALU LINTAS WARGA BINAAN")
+        c.setFont("Helvetica", 8)
+        rng = f"{date_from or '-'} s.d. {date_to or '-'}"
+        c.drawCentredString(w / 2, h - margin - 10 * mm, f"Periode: {rng}  |  Dicetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}")
+        c.line(margin, h - margin - 13 * mm, w - margin, h - margin - 13 * mm)
+
+    col_widths = [10 * mm, 28 * mm, 22 * mm, 40 * mm, 15 * mm, 38 * mm, 16 * mm, 45 * mm, 35 * mm]
+    col_titles = ["No", "Waktu", "No. Reg", "Nama", "Blok", "Titik Keamanan", "Arah", "Tujuan", "Petugas Pengawal"]
+
+    def table_header(y):
+        c.setFont("Helvetica-Bold", 7.5)
+        cx = margin
+        c.setFillColorRGB(0.9, 0.9, 0.9)
+        c.rect(margin, y - 5 * mm, sum(col_widths), 5.5 * mm, stroke=1, fill=1)
+        c.setFillColorRGB(0, 0, 0)
+        for i, t in enumerate(col_titles):
+            c.drawString(cx + 1.5 * mm, y - 3.5 * mm, t)
+            cx += col_widths[i]
+        return y - 6 * mm
+
+    header()
+    y = h - margin - 17 * mm
+    y = table_header(y)
+    c.setFont("Helvetica", 7)
+    row_h = 5 * mm
+
+    for i, a in enumerate(items, 1):
+        if y < margin + 20 * mm:
+            c.showPage()
+            header()
+            y = h - margin - 17 * mm
+            y = table_header(y)
+            c.setFont("Helvetica", 7)
+        ts = a.get("scan_timestamp", "")
+        try:
+            ts_disp = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%d/%m %H:%M")
+        except Exception:
+            ts_disp = (ts or "-")[:16]
+        vals = [str(i), ts_disp, a.get("inmate_reg") or "-", (a.get("inmate_name") or "-")[:28],
+                a.get("cell_block") or "-", (a.get("checkpoint_location") or "-")[:26],
+                a.get("direction_label") or "-", (a.get("purpose") or "-")[:32],
+                (a.get("escort_officer") or "-")[:24]]
+        cx = margin
+        for j, v in enumerate(vals):
+            c.drawString(cx + 1.5 * mm, y - 3.5 * mm, v)
+            cx += col_widths[j]
+        c.line(margin, y - row_h, margin + sum(col_widths), y - row_h)
+        y -= row_h
+
+    y -= 12 * mm
+    if y < margin + 20 * mm:
+        c.showPage()
+        y = h - margin - 20 * mm
+    c.setFont("Helvetica", 8)
+    c.drawString(w - 75 * mm, y, f"{settings.get('institution_name','')}, {datetime.now().strftime('%d %B %Y')}")
+    c.drawString(w - 75 * mm, y - 5 * mm, "Kepala Regu Keamanan,")
+    c.line(w - 75 * mm, y - 22 * mm, w - 20 * mm, y - 22 * mm)
+    c.drawString(w - 75 * mm, y - 26 * mm, "( ......................................... )")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    fname = f"laporan_lalulintas_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    if request is not None:
+        await log_audit(user, "security_crossings", "-", "export",
+                        {"type": "report_pdf", "filters": {"location_id": location_id, "direction": direction,
+                                                            "date_from": date_from, "date_to": date_to},
+                         "count": len(items)}, request)
+    return StreamingResponse(buf, media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 # ---------------- Activities ----------------
@@ -1092,8 +1664,11 @@ async def seed():
     await db.activities.create_index("status")
     await db.activities.create_index("scan_timestamp")
     await db.audit_log.create_index("timestamp")
+    await db.security_crossings.create_index("inmate_id")
+    await db.security_crossings.create_index("scan_timestamp")
 
     await get_settings_doc()
+    await migrate_settings_modules()
 
     admin_username = os.environ.get("ADMIN_USERNAME", "admin")
     admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@123")
