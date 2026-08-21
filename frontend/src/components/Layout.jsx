@@ -5,6 +5,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   LayoutDashboard, Users2, ScanLine, ClipboardList, CheckSquare,
   MapPin, QrCode, UserCog, ScrollText, Settings as SettingsIcon, LogOut, Sparkles,
+  HeartHandshake, ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -13,6 +14,8 @@ const MENU = [
   { to: "/ai", label: "Asisten AI", icon: Sparkles, roles: ["admin", "supervisor"] },
   { to: "/scan", label: "Pemindaian", icon: ScanLine, roles: ["admin", "supervisor", "operator"] },
   { to: "/activities", label: "Aktivitas", icon: ClipboardList, roles: ["admin", "supervisor", "operator", "read_only"] },
+  { to: "/pembinaan", label: "Pembinaan", icon: HeartHandshake, roles: ["admin", "supervisor", "operator", "read_only"] },
+  { to: "/keamanan", label: "Keamanan", icon: ShieldCheck, roles: ["admin", "supervisor", "operator", "read_only"] },
   { to: "/approvals", label: "Persetujuan", icon: CheckSquare, roles: ["admin", "supervisor"] },
   { to: "/inmates", label: "Warga Binaan", icon: Users2, roles: ["admin", "supervisor", "read_only"] },
   { to: "/locations", label: "Lokasi", icon: MapPin, roles: ["admin", "supervisor", "read_only"] },
