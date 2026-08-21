@@ -15,6 +15,8 @@ import Settings from "@/pages/Settings";
 import BarcodeCenter from "@/pages/BarcodeCenter";
 import ScanPage from "@/pages/ScanPage";
 import AiAssistant from "@/pages/AiAssistant";
+import PembinaanAbsensi from "@/pages/PembinaanAbsensi";
+import KeamananLaluLintas from "@/pages/KeamananLaluLintas";
 
 function Protected({ children, roles }) {
   const { user, loading } = useAuth();
@@ -51,6 +53,8 @@ function App() {
             <Route path="/ai" element={<Protected roles={["admin", "supervisor"]}><AiAssistant /></Protected>} />
             <Route path="/inmates" element={<Inmates />} />
             <Route path="/activities" element={<Activities />} />
+            <Route path="/pembinaan" element={<PembinaanAbsensi />} />
+            <Route path="/keamanan" element={<KeamananLaluLintas />} />
             <Route path="/approvals" element={<Protected roles={["admin", "supervisor"]}><Approvals /></Protected>} />
             <Route path="/locations" element={<Locations />} />
             <Route path="/barcodes" element={<Protected roles={["admin", "supervisor"]}><BarcodeCenter /></Protected>} />
