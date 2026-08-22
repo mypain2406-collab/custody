@@ -24,10 +24,13 @@ const STATUS_STYLE = {
 const EMPTY = {
   full_name: "", age: "", cell_block: "", religion: "", registration_number: "",
   crime_category: "", estimated_release_date: "", mp_1_3: "", mp_1_2: "", mp_2_3: "",
-  medical_alert: "", program_notes: "",
+  medical_alert: "", program_notes: "", photo_url: "",
+  blood_type: "", height_cm: "", weight_kg: "", allergies: "", chronic_conditions: "",
+  current_medications: "", medical_notes: "",
 };
 
 const RELIGIONS = ["Islam", "Kristen", "Katolik", "Hindu", "Buddha", "Konghucu", "Lainnya"];
+const BLOOD_TYPES = ["A", "B", "AB", "O", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 
 export default function Inmates() {
   const { user } = useAuth();
@@ -54,6 +57,8 @@ export default function Inmates() {
         payload[k] = form[k] === "" || form[k] === undefined || form[k] === null ? null : form[k];
       });
       payload.age = form.age ? parseInt(form.age, 10) : null;
+      payload.height_cm = form.height_cm ? parseInt(form.height_cm, 10) : null;
+      payload.weight_kg = form.weight_kg ? parseInt(form.weight_kg, 10) : null;
       if (editing) {
         await api.put(`/inmates/${editing.id}`, payload);
         toast.success("Data warga binaan diperbarui");
@@ -239,8 +244,68 @@ export default function Inmates() {
               {F("mp_1_2", "1/2 MP", { type: "date" })}
               {F("mp_2_3", "2/3 MP", { type: "date" })}
             </div>
+            {F("photo_url", "Foto (URL)", { full: true, placeholder: "https://... (tampil di kartu barcode)" })}
             {F("medical_alert", "Peringatan Medis", { full: true, placeholder: "Kosongkan jika tidak ada" })}
+
+            <div className="col-span-2 border-t border-border pt-4 mt-1">
+              <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-muted-foreground mb-3">Rekam Medis Detail</div>
+            </div>
+            <div>
+              <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Golongan Darah</Label>
+              <Select value={form.blood_type} onValueChange={(v) => setForm({ ...form, blood_type: v })}>
+                <SelectTrigger className="mt-1.5 rounded-none" data-testid="inmate-form-blood_type">
+                  <SelectValue placeholder="Pilih gol. darah" />
+                </SelectTrigger>
+                <SelectContent className="rounded-none">
+                  {BLOOD_TYPES.map((b) => (
+                    <SelectItem key={b} value={b}>{b}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {F("height_cm", "Tinggi Badan (cm)", { type: "number" })}
+            {F("weight_kg", "Berat Badan (kg)", { type: "number" })}
             <div className="col-span-2">
+              <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Alergi</Label>
+              <Textarea
+                className="mt-1.5 rounded-none min-h-[60px]"
+                value={form.allergies || ""}
+                onChange={(e) => setForm({ ...form, allergies: e.target.value })}
+                placeholder="Kosongkan jika tidak ada"
+                data-testid="inmate-form-allergies"
+              />
+            </div>
+            <div className="col-span-2">
+              <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Riwayat Penyakit</Label>
+              <Textarea
+                className="mt-1.5 rounded-none min-h-[60px]"
+                value={form.chronic_conditions || ""}
+                onChange={(e) => setForm({ ...form, chronic_conditions: e.target.value })}
+                placeholder="Riwayat penyakit kronis / menular"
+                data-testid="inmate-form-chronic_conditions"
+              />
+            </div>
+            <div className="col-span-2">
+              <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Obat Rutin Dikonsumsi</Label>
+              <Textarea
+                className="mt-1.5 rounded-none min-h-[60px]"
+                value={form.current_medications || ""}
+                onChange={(e) => setForm({ ...form, current_medications: e.target.value })}
+                data-testid="inmate-form-current_medications"
+              />
+            </div>
+            <div className="col-span-2">
+              <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Catatan Medis Lengkap</Label>
+              <Textarea
+                className="mt-1.5 rounded-none min-h-[100px]"
+                value={form.medical_notes || ""}
+                onChange={(e) => setForm({ ...form, medical_notes: e.target.value })}
+                placeholder="Detail rekam medis lainnya (riwayat rawat inap, operasi, vaksinasi, dll.)"
+                data-testid="inmate-form-medical_notes"
+              />
+            </div>
+
+            <div className="col-span-2 border-t border-border pt-4 mt-1">
               <Label className="text-[10px] font-bold uppercase tracking-[0.15em]">Keterangan / Program Pembinaan</Label>
               <Textarea
                 className="mt-1.5 rounded-none min-h-[80px]"
