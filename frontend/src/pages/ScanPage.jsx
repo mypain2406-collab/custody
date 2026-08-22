@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ScanLine, MapPin, LogOut, Camera, Keyboard, TriangleAlert, CheckCircle2, ArrowLeft } from "lucide-react";
+import { ScanLine, MapPin, LogOut, Camera, Keyboard, TriangleAlert, CheckCircle2, ArrowLeft, ShieldAlert } from "lucide-react";
 
 export default function ScanPage() {
   const { user, logout } = useAuth();
@@ -27,6 +27,9 @@ export default function ScanPage() {
   const [busy, setBusy] = useState(false);
   const [lastScan, setLastScan] = useState(null);
   const [cameraError, setCameraError] = useState(null);
+  const [direction, setDirection] = useState("keluar");
+  const [purpose, setPurpose] = useState("");
+  const [escortOfficer, setEscortOfficer] = useState("");
 
   const scannerRef = useRef(null);
   const runningRef = useRef(false);
@@ -121,8 +124,39 @@ export default function ScanPage() {
     }
   };
 
+  const submitCrossing = async () => {
+    setBusy(true);
+    try {
+      const payload = {
+        inmate_id: inmate.id,
+        location_id: locationId || undefined,
+        direction,
+        purpose: purpose || undefined,
+        escort_officer: escortOfficer || undefined,
+        scan_timestamp: new Date().toISOString(),
+      };
+      const r = await api.post("/security/crossings", payload);
+      setLastScan(r.data);
+      toast.success(`${inmate.full_name} tercatat ${r.data.direction_label || ""} di ${r.data.checkpoint_location || "titik keamanan"}`);
+      setInmate(null);
+      setManualCode("");
+      setPurpose("");
+      setEscortOfficer("");
+      setStep("scan");
+    } catch (e) {
+      toast.error(fmtError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const selectedLocation = (locations || []).find((l) => l.id === locationId);
-  const categories = settings?.activity_categories || [];
+  const locTypeDef = (settings?.location_types || []).find((t) => t.key === selectedLocation?.location_type);
+  const scanModule = locationId
+    ? (locTypeDef?.module || (selectedLocation?.location_type === "security" ? "keamanan" : "pembinaan"))
+    : "pembinaan";
+  const isKeamanan = scanModule === "keamanan";
+  const categories = (settings?.activity_categories || []).filter((c) => (c.module || "pembinaan") === "pembinaan");
   const conditions = settings?.inmate_conditions || [];
 
   return (
@@ -153,7 +187,12 @@ export default function ScanPage() {
           <div className="space-y-6 pt-4" data-testid="scan-setup-step">
             <div>
               <div className="text-[10px] font-bold uppercase tracking-[0.3em] text-neutral-400">Langkah 1</div>
-              <h1 className="text-3xl font-black tracking-tight mt-1">Pilih Lokasi & Kategori</h1>
+              <h1 className="text-3xl font-black tracking-tight mt-1">{isKeamanan ? "Pilih Lokasi & Arah" : "Pilih Lokasi & Kategori"}</h1>
+              {isKeamanan && (
+                <div className="mt-2 inline-flex items-center gap-1.5 border border-amber-700 bg-amber-950/40 text-amber-300 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1" data-testid="scan-keamanan-badge">
+                  <ShieldAlert className="h-3 w-3" /> Mode Keamanan — Lalu Lintas Warga Binaan
+                </div>
+              )}
             </div>
             <div className="space-y-5">
               <div>
@@ -174,22 +213,37 @@ export default function ScanPage() {
                   </div>
                 )}
               </div>
-              <div>
-                <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Kategori Aktivitas</Label>
-                <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white" data-testid="scan-category-select">
-                    <SelectValue placeholder="Pilih kategori" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-none">
-                    {categories.map((c) => (
-                      <SelectItem key={c.key} value={c.key} data-testid={`scan-category-option-${c.key}`}>{c.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {isKeamanan ? (
+                <div>
+                  <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Arah Lalu Lintas</Label>
+                  <Select value={direction} onValueChange={setDirection}>
+                    <SelectTrigger className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white" data-testid="scan-direction-select">
+                      <SelectValue placeholder="Pilih arah" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-none">
+                      <SelectItem value="keluar" data-testid="scan-direction-option-keluar">Keluar</SelectItem>
+                      <SelectItem value="masuk" data-testid="scan-direction-option-masuk">Masuk</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div>
+                  <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Kategori Aktivitas</Label>
+                  <Select value={category} onValueChange={setCategory}>
+                    <SelectTrigger className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white" data-testid="scan-category-select">
+                      <SelectValue placeholder="Pilih kategori" />
+                    </SelectTrigger>
+                    <SelectContent className="rounded-none">
+                      {categories.map((c) => (
+                        <SelectItem key={c.key} value={c.key} data-testid={`scan-category-option-${c.key}`}>{c.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Button
                 className="w-full rounded-none h-14 font-bold uppercase tracking-widest text-sm bg-white text-neutral-950 hover:bg-neutral-200"
-                disabled={!locationId || !category}
+                disabled={!locationId || (!isKeamanan && !category) || (isKeamanan && !direction)}
                 onClick={() => setStep("scan")}
                 data-testid="scan-start-btn"
               >
@@ -215,7 +269,7 @@ export default function ScanPage() {
               <MapPin className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate" data-testid="scan-active-location">{selectedLocation?.location_name}</span>
               <span className="text-neutral-600">|</span>
-              <span className="truncate">{categories.find((c) => c.key === category)?.label}</span>
+              <span className="truncate">{isKeamanan ? (direction === "masuk" ? "Masuk" : "Keluar") : categories.find((c) => c.key === category)?.label}</span>
             </div>
 
             <div className="border-2 border-white bg-black aspect-square relative overflow-hidden" data-testid="qr-viewfinder">
@@ -253,7 +307,11 @@ export default function ScanPage() {
                 <CheckCircle2 className="h-5 w-5 text-green-400 shrink-0 mt-0.5" />
                 <div className="text-sm">
                   <div className="font-semibold">{lastScan.inmate_name} tercatat</div>
-                  <div className="text-neutral-400 text-xs mt-0.5">{lastScan.scan_location} — menunggu persetujuan supervisor</div>
+                  <div className="text-neutral-400 text-xs mt-0.5">
+                    {isKeamanan
+                      ? `${lastScan.direction_label || ""} — ${lastScan.checkpoint_location || "titik keamanan"}`
+                      : `${lastScan.scan_location || "lokasi"} — menunggu persetujuan supervisor`}
+                  </div>
                 </div>
               </div>
             )}
@@ -288,41 +346,73 @@ export default function ScanPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Durasi (menit)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white"
-                  value={duration}
-                  onChange={(e) => setDuration(e.target.value)}
-                  data-testid="scan-duration-input"
-                />
-              </div>
-              <div>
-                <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Kondisi</Label>
-                <Select value={condition} onValueChange={setCondition}>
-                  <SelectTrigger className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white" data-testid="scan-condition-select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-none">
-                    {conditions.map((c) => (
-                      <SelectItem key={c.key} value={c.key} data-testid={`scan-condition-option-${c.key}`}>{c.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Catatan (opsional)</Label>
-              <Textarea
-                className="mt-2 rounded-none bg-neutral-900 border-neutral-700 text-white min-h-[80px]"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                data-testid="scan-description-input"
-              />
-            </div>
+            {isKeamanan ? (
+              <>
+                <div>
+                  <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Arah</Label>
+                  <div className="mt-2 h-12 flex items-center px-3 border border-neutral-700 bg-neutral-900 text-sm font-bold uppercase tracking-widest" data-testid="scan-confirm-direction">
+                    {direction === "masuk" ? "Masuk" : "Keluar"}
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Tujuan / Keperluan</Label>
+                  <Input
+                    className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white"
+                    value={purpose}
+                    onChange={(e) => setPurpose(e.target.value)}
+                    placeholder="Mis. Menuju Poliklinik"
+                    data-testid="scan-purpose-input"
+                  />
+                </div>
+                <div>
+                  <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Petugas Pengawal (opsional)</Label>
+                  <Input
+                    className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white"
+                    value={escortOfficer}
+                    onChange={(e) => setEscortOfficer(e.target.value)}
+                    data-testid="scan-escort-input"
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Durasi (menit)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white"
+                      value={duration}
+                      onChange={(e) => setDuration(e.target.value)}
+                      data-testid="scan-duration-input"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Kondisi</Label>
+                    <Select value={condition} onValueChange={setCondition}>
+                      <SelectTrigger className="mt-2 rounded-none h-12 bg-neutral-900 border-neutral-700 text-white" data-testid="scan-condition-select">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="rounded-none">
+                        {conditions.map((c) => (
+                          <SelectItem key={c.key} value={c.key} data-testid={`scan-condition-option-${c.key}`}>{c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-400">Catatan (opsional)</Label>
+                  <Textarea
+                    className="mt-2 rounded-none bg-neutral-900 border-neutral-700 text-white min-h-[80px]"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    data-testid="scan-description-input"
+                  />
+                </div>
+              </>
+            )}
             <div className="flex gap-3">
               <Button
                 variant="outline"
@@ -334,11 +424,11 @@ export default function ScanPage() {
               </Button>
               <Button
                 className="rounded-none h-14 flex-[2] bg-white text-neutral-950 hover:bg-neutral-200 font-bold uppercase tracking-widest text-xs"
-                onClick={submitScan}
+                onClick={isKeamanan ? submitCrossing : submitScan}
                 disabled={busy}
                 data-testid="scan-submit-btn"
               >
-                {busy ? "Menyimpan..." : "Catat Aktivitas"}
+                {busy ? "Menyimpan..." : isKeamanan ? "Catat Lalu Lintas" : "Catat Aktivitas"}
               </Button>
             </div>
           </div>
