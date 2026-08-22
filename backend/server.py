@@ -878,6 +878,111 @@ async def export_crossings(location_id: Optional[str] = None, direction: Optiona
         headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
+@api_router.get("/security/crossings/report")
+async def crossings_report(location_id: Optional[str] = None, direction: Optional[str] = None,
+                           date_from: Optional[str] = None, date_to: Optional[str] = None,
+                           request: Request = None, user: dict = Depends(get_current_user)):
+    from reportlab.pdfgen import canvas as pdfcanvas
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm
+    q = {}
+    if location_id:
+        q["location_id"] = location_id
+    if direction:
+        q["direction"] = direction
+    if user["role"] == "operator":
+        q["operator_user_id"] = user["id"]
+    if date_from or date_to:
+        q["scan_timestamp"] = {}
+        if date_from:
+            q["scan_timestamp"]["$gte"] = date_from
+        if date_to:
+            q["scan_timestamp"]["$lte"] = (date_to + "T23:59:59+00:00") if len(date_to) == 10 else date_to
+    items = await db.security_crossings.find(q, {"_id": 0}).sort("scan_timestamp", 1).to_list(20000)
+    settings = await get_settings_doc()
+
+    buf = io.BytesIO()
+    page = landscape(A4)
+    c = pdfcanvas.Canvas(buf, pagesize=page)
+    w, h = page
+    margin = 12 * mm
+
+    def header():
+        c.setFont("Helvetica-Bold", 13)
+        c.drawCentredString(w / 2, h - margin, settings.get("institution_name", ""))
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(w / 2, h - margin - 5.5 * mm, "LAPORAN LALU LINTAS WARGA BINAAN")
+        c.setFont("Helvetica", 8)
+        rng = f"{date_from or '-'} s.d. {date_to or '-'}"
+        c.drawCentredString(w / 2, h - margin - 10 * mm, f"Periode: {rng}  |  Dicetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}")
+        c.line(margin, h - margin - 13 * mm, w - margin, h - margin - 13 * mm)
+
+    col_widths = [10 * mm, 28 * mm, 22 * mm, 40 * mm, 15 * mm, 38 * mm, 16 * mm, 45 * mm, 35 * mm]
+    col_titles = ["No", "Waktu", "No. Reg", "Nama", "Blok", "Titik Keamanan", "Arah", "Tujuan", "Petugas Pengawal"]
+
+    def table_header(y):
+        c.setFont("Helvetica-Bold", 7.5)
+        cx = margin
+        c.setFillColorRGB(0.9, 0.9, 0.9)
+        c.rect(margin, y - 5 * mm, sum(col_widths), 5.5 * mm, stroke=1, fill=1)
+        c.setFillColorRGB(0, 0, 0)
+        for i, t in enumerate(col_titles):
+            c.drawString(cx + 1.5 * mm, y - 3.5 * mm, t)
+            cx += col_widths[i]
+        return y - 6 * mm
+
+    header()
+    y = h - margin - 17 * mm
+    y = table_header(y)
+    c.setFont("Helvetica", 7)
+    row_h = 5 * mm
+
+    for i, a in enumerate(items, 1):
+        if y < margin + 20 * mm:
+            c.showPage()
+            header()
+            y = h - margin - 17 * mm
+            y = table_header(y)
+            c.setFont("Helvetica", 7)
+        ts = a.get("scan_timestamp", "")
+        try:
+            ts_disp = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%d/%m %H:%M")
+        except Exception:
+            ts_disp = (ts or "-")[:16]
+        vals = [str(i), ts_disp, a.get("inmate_reg") or "-", (a.get("inmate_name") or "-")[:28],
+                a.get("cell_block") or "-", (a.get("checkpoint_location") or "-")[:26],
+                a.get("direction_label") or "-", (a.get("purpose") or "-")[:32],
+                (a.get("escort_officer") or "-")[:24]]
+        cx = margin
+        for j, v in enumerate(vals):
+            c.drawString(cx + 1.5 * mm, y - 3.5 * mm, v)
+            cx += col_widths[j]
+        c.line(margin, y - row_h, margin + sum(col_widths), y - row_h)
+        y -= row_h
+
+    y -= 12 * mm
+    if y < margin + 20 * mm:
+        c.showPage()
+        y = h - margin - 20 * mm
+    c.setFont("Helvetica", 8)
+    c.drawString(w - 75 * mm, y, f"{settings.get('institution_name','')}, {datetime.now().strftime('%d %B %Y')}")
+    c.drawString(w - 75 * mm, y - 5 * mm, "Kepala Regu Keamanan,")
+    c.line(w - 75 * mm, y - 22 * mm, w - 20 * mm, y - 22 * mm)
+    c.drawString(w - 75 * mm, y - 26 * mm, "( ......................................... )")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    fname = f"laporan_lalulintas_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    if request is not None:
+        await log_audit(user, "security_crossings", "-", "export",
+                        {"type": "report_pdf", "filters": {"location_id": location_id, "direction": direction,
+                                                            "date_from": date_from, "date_to": date_to},
+                         "count": len(items)}, request)
+    return StreamingResponse(buf, media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
 @api_router.get("/security/crossings/{crossing_id}")
 async def get_crossing(crossing_id: str, user: dict = Depends(get_current_user)):
     a = await db.security_crossings.find_one({"id": crossing_id}, {"_id": 0})
@@ -990,111 +1095,6 @@ async def crossing_bon(crossing_id: str, user: dict = Depends(get_current_user))
     c.save()
     buf.seek(0)
     fname = f"bon_lalulintas_{a.get('inmate_reg','')}_{a['id'][:8]}.pdf"
-    return StreamingResponse(buf, media_type="application/pdf",
-                             headers={"Content-Disposition": f'attachment; filename="{fname}"'})
-
-
-@api_router.get("/security/crossings/report")
-async def crossings_report(location_id: Optional[str] = None, direction: Optional[str] = None,
-                           date_from: Optional[str] = None, date_to: Optional[str] = None,
-                           request: Request = None, user: dict = Depends(get_current_user)):
-    from reportlab.pdfgen import canvas as pdfcanvas
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.units import mm
-    q = {}
-    if location_id:
-        q["location_id"] = location_id
-    if direction:
-        q["direction"] = direction
-    if user["role"] == "operator":
-        q["operator_user_id"] = user["id"]
-    if date_from or date_to:
-        q["scan_timestamp"] = {}
-        if date_from:
-            q["scan_timestamp"]["$gte"] = date_from
-        if date_to:
-            q["scan_timestamp"]["$lte"] = (date_to + "T23:59:59+00:00") if len(date_to) == 10 else date_to
-    items = await db.security_crossings.find(q, {"_id": 0}).sort("scan_timestamp", 1).to_list(20000)
-    settings = await get_settings_doc()
-
-    buf = io.BytesIO()
-    page = landscape(A4)
-    c = pdfcanvas.Canvas(buf, pagesize=page)
-    w, h = page
-    margin = 12 * mm
-
-    def header():
-        c.setFont("Helvetica-Bold", 13)
-        c.drawCentredString(w / 2, h - margin, settings.get("institution_name", ""))
-        c.setFont("Helvetica-Bold", 10)
-        c.drawCentredString(w / 2, h - margin - 5.5 * mm, "LAPORAN LALU LINTAS WARGA BINAAN")
-        c.setFont("Helvetica", 8)
-        rng = f"{date_from or '-'} s.d. {date_to or '-'}"
-        c.drawCentredString(w / 2, h - margin - 10 * mm, f"Periode: {rng}  |  Dicetak: {datetime.now().strftime('%d-%m-%Y %H:%M')}")
-        c.line(margin, h - margin - 13 * mm, w - margin, h - margin - 13 * mm)
-
-    col_widths = [10 * mm, 28 * mm, 22 * mm, 40 * mm, 15 * mm, 38 * mm, 16 * mm, 45 * mm, 35 * mm]
-    col_titles = ["No", "Waktu", "No. Reg", "Nama", "Blok", "Titik Keamanan", "Arah", "Tujuan", "Petugas Pengawal"]
-
-    def table_header(y):
-        c.setFont("Helvetica-Bold", 7.5)
-        cx = margin
-        c.setFillColorRGB(0.9, 0.9, 0.9)
-        c.rect(margin, y - 5 * mm, sum(col_widths), 5.5 * mm, stroke=1, fill=1)
-        c.setFillColorRGB(0, 0, 0)
-        for i, t in enumerate(col_titles):
-            c.drawString(cx + 1.5 * mm, y - 3.5 * mm, t)
-            cx += col_widths[i]
-        return y - 6 * mm
-
-    header()
-    y = h - margin - 17 * mm
-    y = table_header(y)
-    c.setFont("Helvetica", 7)
-    row_h = 5 * mm
-
-    for i, a in enumerate(items, 1):
-        if y < margin + 20 * mm:
-            c.showPage()
-            header()
-            y = h - margin - 17 * mm
-            y = table_header(y)
-            c.setFont("Helvetica", 7)
-        ts = a.get("scan_timestamp", "")
-        try:
-            ts_disp = datetime.fromisoformat(ts.replace("Z", "+00:00")).strftime("%d/%m %H:%M")
-        except Exception:
-            ts_disp = (ts or "-")[:16]
-        vals = [str(i), ts_disp, a.get("inmate_reg") or "-", (a.get("inmate_name") or "-")[:28],
-                a.get("cell_block") or "-", (a.get("checkpoint_location") or "-")[:26],
-                a.get("direction_label") or "-", (a.get("purpose") or "-")[:32],
-                (a.get("escort_officer") or "-")[:24]]
-        cx = margin
-        for j, v in enumerate(vals):
-            c.drawString(cx + 1.5 * mm, y - 3.5 * mm, v)
-            cx += col_widths[j]
-        c.line(margin, y - row_h, margin + sum(col_widths), y - row_h)
-        y -= row_h
-
-    y -= 12 * mm
-    if y < margin + 20 * mm:
-        c.showPage()
-        y = h - margin - 20 * mm
-    c.setFont("Helvetica", 8)
-    c.drawString(w - 75 * mm, y, f"{settings.get('institution_name','')}, {datetime.now().strftime('%d %B %Y')}")
-    c.drawString(w - 75 * mm, y - 5 * mm, "Kepala Regu Keamanan,")
-    c.line(w - 75 * mm, y - 22 * mm, w - 20 * mm, y - 22 * mm)
-    c.drawString(w - 75 * mm, y - 26 * mm, "( ......................................... )")
-
-    c.showPage()
-    c.save()
-    buf.seek(0)
-    fname = f"laporan_lalulintas_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-    if request is not None:
-        await log_audit(user, "security_crossings", "-", "export",
-                        {"type": "report_pdf", "filters": {"location_id": location_id, "direction": direction,
-                                                            "date_from": date_from, "date_to": date_to},
-                         "count": len(items)}, request)
     return StreamingResponse(buf, media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
